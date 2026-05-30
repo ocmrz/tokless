@@ -146,10 +146,15 @@ async function wireCodex(opts: RunOpts, deps: Deps = defaultDeps): Promise<boole
     log.sub("codex supports plugins — using `codex plugin marketplace add`");
     const r = await deps.run("codex", ["plugin", "marketplace", "add", "mksglu/context-mode"], { capture: true });
     if (r.code === 0) {
-      enableCodexFeatureFlags(deps, true);
-      return true;
+      const add = await deps.run("codex", ["plugin", "add", "context-mode@context-mode"], { capture: true });
+      if (add.code === 0) {
+        enableCodexFeatureFlags(deps, true);
+        return true;
+      }
+      log.debug(`codex plugin add failed (${add.code}); falling back to manual hooks`);
+    } else {
+      log.debug(`codex marketplace add failed (${r.code}); falling back to manual hooks`);
     }
-    log.debug(`codex plugin install failed (${r.code}); falling back to manual hooks`);
   }
   return wireCodexManual(deps);
 }
@@ -304,6 +309,7 @@ function verifyCodex(): boolean {
   const cx = agentPaths.codex();
   if (!fs.existsSync(cx.config)) return false;
   const raw = fs.readFileSync(cx.config, "utf8");
+  if (raw.includes('[plugins."context-mode@context-mode"]')) return true;
   if (!raw.includes("[mcp_servers.context-mode]")) return false;
   const hooksPath = path.join(cx.dir, "hooks.json");
   if (!fs.existsSync(hooksPath)) return false;
