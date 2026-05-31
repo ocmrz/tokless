@@ -109,11 +109,11 @@ func RunInit(opts InitOptions) int {
 		for _, a := range allAgents {
 			opt := util.MultiSelectOption{Value: a.ID, Label: a.Label}
 			if installedIDs[a.ID] {
-				opt.Hint = util.C.Gray("installed")
 				opt.Selected = true
 			} else {
 				opt.Disabled = true
 				opt.DisabledReason = "not installed"
+				opt.Hint = a.Homepage
 			}
 			optsList = append(optsList, opt)
 		}

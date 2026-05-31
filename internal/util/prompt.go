@@ -91,15 +91,17 @@ func MultiSelect(question string, options []MultiSelectOption) []string {
 	reader := bufio.NewReader(os.Stdin)
 	firstRender := true
 
+	const headerLines = 2
+
 	render := func() {
 		if !firstRender {
-			fmt.Fprintf(os.Stdout, "\x1b[%dA", len(items)+1)
+			fmt.Fprintf(os.Stdout, "\x1b[%dA", len(items)+headerLines)
 		}
 		firstRender = false
 		fmt.Fprint(os.Stdout, "\x1b[0J")
 		var b strings.Builder
-		b.WriteString(C.Bold(C.Cyan("?")) + " " + C.Bold(question) + " " +
-			C.Gray("(<space> toggle, <a> all, <enter> confirm)") + "\r\n")
+		b.WriteString(C.Bold(C.Cyan("?")) + " " + C.Bold(question) + "\r\n")
+		b.WriteString("  " + C.Gray("↑/↓ move · <space> select · <a> all · <enter> confirm") + "\r\n")
 		for i, it := range items {
 			pointer := " "
 			if i == cursor {
