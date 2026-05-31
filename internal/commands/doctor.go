@@ -60,13 +60,25 @@ func RunDoctor(offline bool) int {
 		}
 		if outdated > 0 {
 			util.L.Warn(plural(outdated) + " available — run " + util.C.Cyan("tokless update"))
-			for name, info := range v {
-				if info.Installed != nil && info.Latest != nil && util.SemverCompare(info.Installed, info.Latest) < 0 {
-					util.L.Raw("  " + util.C.Gray("• "+padEnd(name, 14)+" "+*info.Installed+" → ") + util.C.Green(*info.Latest))
-				}
-			}
 		} else {
 			util.L.Ok("All up to date.")
+		}
+		for _, tool := range tools {
+			info := v[tool.ID]
+			switch {
+			case tool.NotTrackable:
+				ver := "skill"
+				if info.Latest != nil {
+					ver = "v" + *info.Latest
+				}
+				util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Gray(padEnd(tool.ID, 14)+padEnd(ver, 10)) + util.C.Gray("skill (per-agent)"))
+			case info.Installed != nil && info.Latest != nil && util.SemverCompare(info.Installed, info.Latest) < 0:
+				util.L.Raw("  " + util.C.Yellow("↑") + " " + util.C.Gray(padEnd(tool.ID, 14)+padEnd("v"+*info.Installed, 10)+"→ ") + util.C.Green("v"+*info.Latest))
+			case info.Installed != nil:
+				util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Gray(padEnd(tool.ID, 14)+"v"+*info.Installed))
+			default:
+				util.L.Raw("  " + util.C.Gray("• "+padEnd(tool.ID, 14)+"not installed"))
+			}
 		}
 	}
 

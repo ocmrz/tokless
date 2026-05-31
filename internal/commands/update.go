@@ -32,17 +32,21 @@ func RunUpdate(opts InitOptions) int {
 	var changed []string
 	for _, t := range core.ListTools() {
 		if t.NotTrackable {
-			util.L.Raw("  " + util.C.Gray(util.Sym.Bullet+" "+padEnd(t.ID, 14)+" "+padEnd("per-agent", 10)+"   managed per-agent"))
+			ver := "skill"
+			if info, ok := versions[t.ID]; ok && info.Latest != nil {
+				ver = "v" + *info.Latest
+			}
+			util.L.Raw("  " + util.C.Gray(util.Sym.Bullet+" "+padEnd(t.ID, 14)+padEnd(ver, 10)+"   skill (per-agent)"))
 			continue
 		}
 		info, has := versions[t.ID]
 		installed := util.C.Gray("not on PATH")
 		if has && info.Installed != nil {
-			installed = *info.Installed
+			installed = "v" + *info.Installed
 		}
 		latest := util.C.Gray("?")
 		if has && info.Latest != nil {
-			latest = *info.Latest
+			latest = "v" + *info.Latest
 		}
 		mark := util.C.Gray(util.Sym.Bullet)
 		suffix := util.C.Gray(" (pinned)")

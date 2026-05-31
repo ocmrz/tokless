@@ -157,8 +157,35 @@ func GatherVersions() map[string]VersionInfo {
 	return out
 }
 
+// LatestVersionFor returns one tool's latest available version (cached).
+func LatestVersionFor(id string) *string {
+	return cachedLatest()[id]
+}
+
+// InstalledVersionFor reads one tool's live installed version (nil if absent).
+func InstalledVersionFor(id string) *string {
+	switch id {
+	case "rtk":
+		return rtkInstalledVersion()
+	case "codegraph":
+		return npmInstalledVersion("@colbymchenry/codegraph")
+	case "context-mode":
+		return npmInstalledVersion("context-mode")
+	case "tokless":
+		return npmInstalledVersion("tokless")
+	}
+	return nil
+}
+
 // cachedLatest returns the latest-version lookups, cached to disk (6h TTL).
 func cachedLatest() map[string]*string {
+	if os.Getenv("TOKLESS_TEST") == "1" {
+		m := map[string]*string{}
+		for k, v := range GatherVersions() {
+			m[k] = v.Latest
+		}
+		return m
+	}
 	if c := loadCache(); c != nil {
 		m := map[string]*string{}
 		for k, v := range c.Map {

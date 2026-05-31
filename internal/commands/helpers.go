@@ -1,6 +1,24 @@
 package commands
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/HoangP8/tokless/internal/core"
+	"github.com/HoangP8/tokless/internal/util"
+)
+
+func toolVersionNote(tool *core.ToolManifest) string {
+	if tool.NotTrackable {
+		if v := util.LatestVersionFor(tool.ID); v != nil {
+			return "v" + *v + "  skill"
+		}
+		return "skill"
+	}
+	if v := util.InstalledVersionFor(tool.ID); v != nil {
+		return "v" + *v
+	}
+	return ""
+}
 
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i != -1 {

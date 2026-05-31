@@ -60,7 +60,7 @@ func RunInit(opts InitOptions) int {
 		if err != nil {
 			toolBar.Fail(firstLine(err.Error()))
 		} else {
-			toolBar.Complete("")
+			toolBar.Complete(toolVersionNote(tool))
 		}
 	}
 	toolBar.Done("")
