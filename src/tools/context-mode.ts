@@ -141,6 +141,9 @@ async function wireCodex(opts: RunOpts, deps: Deps = defaultDeps): Promise<boole
     log.err("codex CLI not on PATH — install codex first.");
     return false;
   }
+  // Idempotency: if the plugin is already installed, re-running marketplace/add
+  // would rewrite the marketplace `last_updated` timestamp on every run.
+  if (verifyCodex()) return true;
   const probe = await deps.run("codex", ["plugin", "--help"], { capture: true });
   if (probe.code === 0) {
     log.sub("codex supports plugins — using `codex plugin marketplace add`");
