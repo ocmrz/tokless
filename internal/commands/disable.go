@@ -26,38 +26,47 @@ func disableImpl(opts InitOptions, removeTools bool, verb string) int {
 			detected = append(detected, a.ID)
 		}
 	}
-	var agentIDs []string
-	if opts.Agents != nil {
-		for _, id := range opts.Agents {
-			if contains(detected, id) {
-				agentIDs = append(agentIDs, id)
-			}
-		}
-	} else {
-		agentIDs = detected
-	}
-	if len(agentIDs) == 0 {
+	if len(detected) == 0 {
 		util.L.Raw("  " + util.C.Gray("nothing wired."))
 		util.L.Raw("")
 		return 0
 	}
 
-	tools := core.ListTools()
+	// Stage 1: which agents to remove from.
+	agentIDs := pickAgents(opts, detected, verb)
+	if len(agentIDs) == 0 {
+		util.L.Raw("  " + util.C.Gray("Nothing selected."))
+		util.L.Raw("")
+		return 0
+	}
+
+	// Stage 2: which of the 4 tools to remove (default: all → complete removal).
+	allTools := core.ListTools()
+	tools := pickTools(opts, allTools, verb)
+	if len(tools) == 0 {
+		util.L.Raw("  " + util.C.Gray("Nothing selected."))
+		util.L.Raw("")
+		return 0
+	}
+
 	bar := util.NewProgress("")
 	bar.Start(len(agentIDs))
 	for _, id := range agentIDs {
 		agent := core.GetAgent(id)
 		bar.Begin(agent.Label)
-		for _, tool := range tools {
-			if unwire, ok := tool.UnwireFor[id]; ok && !opts.DryRun {
-				_, _ = unwire(core.RunOpts{DryRun: opts.DryRun})
+		_ = util.WithSilencedLogs(func() error {
+			for _, tool := range tools {
+				if unwire, ok := tool.UnwireFor[id]; ok && !opts.DryRun {
+					_, _ = unwire(core.RunOpts{DryRun: opts.DryRun})
+				}
 			}
-		}
+			return nil
+		})
 		bar.Complete("")
 	}
 	bar.Done("")
 
-	if removeTools && !opts.DryRun {
+	if removeTools && !opts.DryRun && len(tools) == len(allTools) && len(agentIDs) == len(detected) {
 		cacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "tokless")
 		if util.Exists(cacheDir) {
 			_ = os.RemoveAll(cacheDir)
@@ -68,10 +77,68 @@ func disableImpl(opts InitOptions, removeTools bool, verb string) int {
 	for i, id := range agentIDs {
 		labels[i] = core.GetAgent(id).Label
 	}
+	toolLabels := make([]string, len(tools))
+	for i, t := range tools {
+		toolLabels[i] = t.Label
+	}
 	util.L.Raw("")
-	util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + verb + " for " + util.C.Bold(joinComma(labels)) + ".")
+	util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + verb + " " + util.C.Bold(joinComma(toolLabels)) +
+		util.C.Gray(" from ") + util.C.Bold(joinComma(labels)) + ".")
 	util.L.Raw("")
 	return 0
+}
+
+// pickAgents resolves which agents to act on: --agents flag, else interactive
+// multiselect (all detected pre-selected), else all detected.
+func pickAgents(opts InitOptions, detected []string, verb string) []string {
+	if opts.Agents != nil {
+		var out []string
+		for _, id := range opts.Agents {
+			if contains(detected, id) {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	if !util.IsInteractive() {
+		return detected
+	}
+	util.L.Raw("")
+	var optsList []util.MultiSelectOption
+	for _, id := range detected {
+		optsList = append(optsList, util.MultiSelectOption{Value: id, Label: core.GetAgent(id).Label, Selected: true})
+	}
+	return util.MultiSelect("Select agents to "+lower(verb)+" tokless from", optsList)
+}
+
+// pickTools resolves which tools to remove: --tools flag, else interactive
+// multiselect (all pre-selected → default complete removal), else all tools.
+func pickTools(opts InitOptions, allTools []*core.ToolManifest, verb string) []*core.ToolManifest {
+	if opts.Tools != nil {
+		var out []*core.ToolManifest
+		for _, t := range allTools {
+			if contains(opts.Tools, t.ID) {
+				out = append(out, t)
+			}
+		}
+		return out
+	}
+	if !util.IsInteractive() {
+		return allTools
+	}
+	util.L.Raw("")
+	var optsList []util.MultiSelectOption
+	for _, t := range allTools {
+		optsList = append(optsList, util.MultiSelectOption{Value: t.ID, Label: t.Label, Selected: true})
+	}
+	picked := util.MultiSelect("Select tools to "+lower(verb), optsList)
+	var out []*core.ToolManifest
+	for _, t := range allTools {
+		if contains(picked, t.ID) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func lower(s string) string {
