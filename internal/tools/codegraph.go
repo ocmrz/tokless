@@ -128,6 +128,21 @@ func codegraphVerify(agent string) bool {
 	return false
 }
 
+func codegraphIndexProject(dir string, opts core.RunOpts) (bool, error) {
+	if util.Which("codegraph") == "" {
+		return false, nil
+	}
+	if opts.DryRun {
+		util.L.Sub("[dry-run] would run: codegraph init -i  (in " + dir + ")")
+		return true, nil
+	}
+	res := util.Run("codegraph", []string{"init", "-i"}, util.RunOptions{Cwd: dir, Capture: true})
+	if res.Code != 0 {
+		res = util.Run("codegraph", []string{"init"}, util.RunOptions{Cwd: dir, Capture: true})
+	}
+	return res.Code == 0, nil
+}
+
 func codegraphWire(agent string) core.AgentFn {
 	return func(opts core.RunOpts) (bool, error) {
 		if isTest() {
@@ -137,36 +152,70 @@ func codegraphWire(agent string) core.AgentFn {
 			return codegraphRealInstall(opts), nil
 		}
 		ran := codegraphRealInstall(opts)
+		wireAutoIndex(agent)
 		return ran && codegraphVerify(agent), nil
 	}
 }
 
+// wireAutoIndex installs the per-agent SessionStart trigger that auto-builds the
+// codegraph index when a session opens in a fresh project.
+func wireAutoIndex(agent string) {
+	switch agent {
+	case "claude":
+		wireClaudeAutoIndex()
+	case "codex":
+		wireCodexAutoIndex()
+	case "opencode":
+		wireOpencodeAutoIndex()
+	}
+}
+
+func unwireAutoIndex(agent string) {
+	switch agent {
+	case "claude":
+		unwireClaudeAutoIndex()
+	case "codex":
+		unwireCodexAutoIndex()
+	case "opencode":
+		unwireOpencodeAutoIndex()
+	}
+}
+
 var codegraph = &core.ToolManifest{
-	ID:          "codegraph",
-	Label:       "CodeGraph",
-	Description: "MCP server that lets agents query a code knowledge graph instead of reading raw files.",
-	Homepage:    "https://github.com/colbymchenry/codegraph",
-	InstallHint: "npm i -g @colbymchenry/codegraph",
-	Channel:     core.ChannelNpm,
-	Install:     codegraphEnsureInstalled,
+	ID:           "codegraph",
+	Label:        "CodeGraph",
+	Description:  "MCP server that lets agents query a code knowledge graph instead of reading raw files.",
+	Homepage:     "https://github.com/colbymchenry/codegraph",
+	InstallHint:  "npm i -g @colbymchenry/codegraph",
+	Channel:      core.ChannelNpm,
+	Install:      codegraphEnsureInstalled,
+	IndexProject: codegraphIndexProject,
 	WireFor: map[string]core.AgentFn{
 		"claude":   codegraphWire("claude"),
 		"opencode": codegraphWire("opencode"),
 		"codex":    codegraphWire("codex"),
 	},
 	UnwireFor: map[string]core.AgentFn{
-		"claude":   func(core.RunOpts) (bool, error) { agents.RemoveClaudeMcp("codegraph"); return true, nil },
-		"opencode": func(core.RunOpts) (bool, error) { agents.RemoveOpenCodeMcp("codegraph"); return true, nil },
+		"claude": func(core.RunOpts) (bool, error) {
+			agents.RemoveClaudeMcp("codegraph")
+			unwireAutoIndex("claude")
+			return true, nil
+		},
+		"opencode": func(core.RunOpts) (bool, error) {
+			agents.RemoveOpenCodeMcp("codegraph")
+			unwireAutoIndex("opencode")
+			return true, nil
+		},
 		"codex": func(core.RunOpts) (bool, error) {
 			cx := util.CodexPathsResolved()
 			raw, ok := util.ReadFileSafe(cx.Config)
-			if !ok {
-				return true, nil
+			if ok {
+				next := util.RemoveBlock(raw, "mcp_servers.codegraph")
+				if next != raw {
+					_ = util.WriteFile(cx.Config, next)
+				}
 			}
-			next := util.RemoveBlock(raw, "mcp_servers.codegraph")
-			if next != raw {
-				_ = util.WriteFile(cx.Config, next)
-			}
+			unwireAutoIndex("codex")
 			return true, nil
 		},
 	},
