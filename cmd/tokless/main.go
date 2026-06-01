@@ -48,9 +48,11 @@ func helpText() string {
 		"  " + cy("tokless") + "              Install + wire everything (default; safe to re-run)\n" +
 		"  " + cy("tokless update") + "       Show version diff and upgrade the 4 tools\n" +
 		"  " + cy("tokless doctor") + "       Show what's wired up; warn about anything broken\n" +
+		"  " + cy("tokless index") + "        Build per-project indexes (codegraph) in the current dir\n" +
 		"  " + cy("tokless uninstall") + "    Remove everything tokless ever touched\n\n" +
 		util.C.Bold("Flags:") + "\n" +
 		"  --agents <list>     Limit to a subset: claude,opencode,codex\n" +
+		"  --tools <list>      Limit to a subset: rtk,caveman,codegraph,context-mode\n" +
 		"  --dry-run           Show what would change without writing anything\n" +
 		"  --verbose           Show every step\n\n" +
 		util.C.Gray("Docs: https://github.com/HoangP8/tokless")
@@ -137,6 +139,8 @@ func main() {
 		code = commands.RunUpdate(opts)
 	case "doctor":
 		code = commands.RunDoctor(p.bools["offline"])
+	case "index":
+		code = commands.RunIndex(opts, p.bools["auto"])
 	case "disable":
 		code = commands.RunDisable(opts)
 	case "uninstall":
