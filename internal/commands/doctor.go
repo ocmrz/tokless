@@ -63,23 +63,7 @@ func RunDoctor(offline bool) int {
 		} else {
 			util.L.Ok("All up to date.")
 		}
-		for _, tool := range tools {
-			info := v[tool.ID]
-			switch {
-			case tool.NotTrackable:
-				ver := "skill"
-				if info.Latest != nil {
-					ver = "v" + *info.Latest
-				}
-				util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Gray(padEnd(tool.ID, 14)+ver))
-			case info.Installed != nil && info.Latest != nil && util.SemverCompare(info.Installed, info.Latest) < 0:
-				util.L.Raw("  " + util.C.Yellow("↑") + " " + util.C.Gray(padEnd(tool.ID, 14)+padEnd("v"+*info.Installed, 10)+"→ ") + util.C.Green("v"+*info.Latest))
-			case info.Installed != nil:
-				util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Gray(padEnd(tool.ID, 14)+"v"+*info.Installed))
-			default:
-				util.L.Raw("  " + util.C.Gray("• "+padEnd(tool.ID, 14)+"not installed"))
-			}
-		}
+		listToolVersions(tools, v)
 	}
 
 	broken := 0
@@ -110,6 +94,31 @@ func doctorSummary(r agentReport) {
 		status = util.C.Yellow("missing: " + joinComma(r.missing))
 	}
 	util.L.Raw("  " + mark + " " + padEnd(r.label, 14) + " " + status)
+}
+
+// listToolVersions prints one row per tool.
+func listToolVersions(tools []*core.ToolManifest, v map[string]util.VersionInfo) {
+	for _, tool := range tools {
+		info := v[tool.ID]
+		switch {
+		case tool.NotTrackable:
+			ver := "skill"
+			if info.Latest != nil {
+				ver = "v" + *info.Latest
+			}
+			util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Gray(padEnd(tool.ID, 14)+ver))
+		case info.Installed != nil && info.Latest != nil && util.SemverCompare(info.Installed, info.Latest) < 0:
+			util.L.Raw("  " + util.C.Yellow("↑") + " " + util.C.Gray(padEnd(tool.ID, 14)+padEnd("v"+*info.Installed, 10)+"→ ") + util.C.Green("v"+*info.Latest))
+		case info.Installed != nil:
+			row := padEnd(tool.ID, 14) + padEnd("v"+*info.Installed, 10)
+			if info.Latest != nil {
+				row += "→ v" + *info.Latest
+			}
+			util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Gray(row))
+		default:
+			util.L.Raw("  " + util.C.Gray("• "+padEnd(tool.ID, 14)+"not installed"))
+		}
+	}
 }
 
 func stdoutTTY() bool { return util.StdoutIsTTY() }

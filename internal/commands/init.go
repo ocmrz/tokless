@@ -200,9 +200,24 @@ func RunInit(opts InitOptions) int {
 		util.L.Raw("  " + util.C.Yellow(util.Sym.Warn) + " " + core.GetAgent(id).Label + ": " +
 			joinComma(failed) + " not wired. Run " + util.C.Cyan("tokless doctor") + " for details.")
 	}
+	notifyOutdated(opts)
 	util.L.Raw("")
 	if len(failures) > 0 {
 		return 1
 	}
 	return 0
+}
+
+// notifyOutdated prints each tool's installed → latest version.
+func notifyOutdated(opts InitOptions) {
+	if opts.DryRun || os.Getenv("TOKLESS_TEST") == "1" {
+		return
+	}
+	v := util.GatherVersions()
+	util.L.Raw("")
+	listToolVersions(core.ListTools(), v)
+	if n := util.CountOutdated(v); n > 0 {
+		util.L.Raw("")
+		util.L.Warn(plural(n) + " available — run " + util.C.Cyan("tokless update"))
+	}
 }
