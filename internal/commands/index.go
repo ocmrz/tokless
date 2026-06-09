@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -19,6 +21,36 @@ func looksLikeProject(dir string) bool {
 	return false
 }
 
+// hookStdinDir extracts the project dir from a hook's stdin JSON payload.
+func hookStdinDir() string {
+	fi, err := os.Stdin.Stat()
+	if err != nil || fi.Mode()&os.ModeCharDevice != 0 {
+		return ""
+	}
+	return parseHookDir(os.Stdin)
+}
+
+func parseHookDir(r io.Reader) string {
+	b, err := io.ReadAll(io.LimitReader(r, 1<<20))
+	if err != nil || len(b) == 0 {
+		return ""
+	}
+	var in struct {
+		Cwd            string   `json:"cwd"`
+		WorkspaceRoots []string `json:"workspace_roots"`
+	}
+	if json.Unmarshal(b, &in) != nil {
+		return ""
+	}
+	if in.Cwd != "" {
+		return in.Cwd
+	}
+	if len(in.WorkspaceRoots) > 0 {
+		return in.WorkspaceRoots[0]
+	}
+	return ""
+}
+
 func RunIndex(opts InitOptions, auto bool) int {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -29,6 +61,9 @@ func RunIndex(opts InitOptions, auto bool) int {
 	}
 
 	if auto {
+		if d := hookStdinDir(); d != "" {
+			dir = d
+		}
 		if !looksLikeProject(dir) {
 			return 0
 		}
