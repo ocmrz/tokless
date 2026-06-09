@@ -95,6 +95,16 @@ func ctxWireOpenCode(opts core.RunOpts) (bool, error) {
 	return true, nil
 }
 
+var contextModeLatest = func() *string { return util.LatestVersionFor("context-mode") }
+
+// contextModePluginSpec pins context-mode to the resolved latest version.
+func contextModePluginSpec() string {
+	if v := contextModeLatest(); v != nil && *v != "" {
+		return "context-mode@" + *v
+	}
+	return "context-mode"
+}
+
 func setContextModePlugin(cfg *util.OrderedMap) {
 	plugins := getArr(cfg, "plugin")
 	kept := make([]any, 0, len(plugins))
@@ -104,7 +114,7 @@ func setContextModePlugin(cfg *util.OrderedMap) {
 		}
 		kept = append(kept, p)
 	}
-	kept = append(kept, "context-mode")
+	kept = append(kept, contextModePluginSpec())
 	cfg.Set("plugin", kept)
 	if mv, ok := cfg.Get("mcp"); ok {
 		if mm, ok := mv.(*util.OrderedMap); ok {
