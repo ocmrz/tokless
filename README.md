@@ -21,6 +21,7 @@ A unified CLI to install and update every token-saving plugin — RTK, Caveman, 
 - Claude Code
 - OpenCode
 - Codex
+- Antigravity
 
 **Supported tools** — each installed from its official source and wired per its own docs:
 
@@ -66,7 +67,7 @@ tokless self-update  Update the tokless CLI itself
 Flags:
 
 ```
---agents <list>   Limit to a subset: claude,opencode,codex
+--agents <list>   Limit to a subset: claude,opencode,codex,antigravity
 --dry-run         Show what would change without writing anything
 --verbose         Show every step
 ```
