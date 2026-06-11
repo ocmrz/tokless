@@ -1,6 +1,9 @@
 package agents
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/HoangP8/tokless/internal/core"
 	"github.com/HoangP8/tokless/internal/util"
 )
@@ -10,9 +13,15 @@ func ConfigureCodexMcp(toolID string) (changed bool, file string) {
 	p := util.CodexPathsResolved()
 	_ = util.EnsureDir(p.Dir)
 	raw, _ := util.ReadFileSafe(p.Config)
+	var spawn util.McpSpawn
+	if toolID == "codegraph" {
+		spawn = util.PickMcpSpawn("codegraph", "serve", "--mcp")
+	} else {
+		spawn = util.PickMcpSpawn("context-mode")
+	}
 	block := util.NewTomlBlock("mcp_servers." + toolID)
-	block.Set("command", "codegraph")
-	block.Set("args", []string{"serve", "--mcp"})
+	block.Set("command", spawn.Command)
+	block.Set("args", spawn.Args)
 	block.Set("enabled", true)
 	next := util.UpsertBlock(raw, block, false)
 	if next == raw {
@@ -28,6 +37,23 @@ func CodexHasMcp(toolID string) bool {
 	return util.HasBlock(raw, "mcp_servers."+toolID)
 }
 
+func codexKnownBinDirs() []string {
+	var dirs []string
+	if d := os.Getenv("CODEX_INSTALL_DIR"); d != "" {
+		dirs = append(dirs, d)
+	}
+	if util.IsWin {
+		if la := os.Getenv("LOCALAPPDATA"); la != "" {
+			dirs = append(dirs, filepath.Join(la, "Programs", "OpenAI", "Codex", "bin"))
+		}
+	}
+	dirs = append(dirs,
+		filepath.Join(util.Home(), ".local", "bin"),
+		filepath.Join(util.Home(), ".cargo", "bin"),
+	)
+	return dirs
+}
+
 var codex = &core.AgentManifest{
 	ID:        "codex",
 	Label:     "Codex",
@@ -35,7 +61,7 @@ var codex = &core.AgentManifest{
 	CLIBin:    "codex",
 	ConfigDir: func() string { return util.CodexPathsResolved().Dir },
 	Detect: func() core.Detection {
-		return detectAgent("codex", util.CodexPathsResolved().Dir)
+		return detectAgent("codex", util.CodexPathsResolved().Dir, codexKnownBinDirs())
 	},
 }
 

@@ -278,9 +278,13 @@ var caveman = &core.ToolManifest{
 	},
 	WireFor: map[string]core.AgentFn{
 		"claude": func(opts core.RunOpts) (bool, error) {
-			ran, err := cavemanExec("sh",
-				[]string{"-c", "claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman"},
+			ran, err := cavemanExec("claude",
+				[]string{"plugin", "marketplace", "add", "JuliusBrussee/caveman"},
 				opts, "claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman")
+			if ran && err == nil && !opts.DryRun && !isTest() {
+				ran, err = cavemanExec("claude",
+					[]string{"plugin", "install", "caveman@caveman"}, opts, "")
+			}
 			if !opts.DryRun && !isTest() {
 				writeCavemanRuleset(claudeCavemanMemory())
 				stampCavemanVersion()

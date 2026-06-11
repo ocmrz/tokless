@@ -241,8 +241,12 @@ func wireCodexManual() bool {
 	_ = util.EnsureDir(cx.Dir)
 	enableCodexFeatureFlags(false)
 	raw, _ := util.ReadFileSafe(cx.Config)
+	spawn := util.PickMcpSpawn("context-mode")
 	block := util.NewTomlBlock("mcp_servers.context-mode")
-	block.Set("command", "context-mode")
+	block.Set("command", spawn.Command)
+	if len(spawn.Args) > 0 {
+		block.Set("args", spawn.Args)
+	}
 	_ = util.WriteFile(cx.Config, util.UpsertBlock(raw, block, false))
 
 	hooksPath := filepath.Join(cx.Dir, "hooks.json")
