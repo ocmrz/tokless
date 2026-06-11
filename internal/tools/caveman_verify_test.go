@@ -232,8 +232,6 @@ func TestCavemanRulesetAllAgents(t *testing.T) {
 }
 
 func TestCavemanMemoryPaths(t *testing.T) {
-	// filepath.Join-built expectations keep this portable (backslashes on
-	// Windows).
 	os.Setenv("CODEX_HOME", "/tmp/cxh")
 	defer os.Unsetenv("CODEX_HOME")
 	if got, want := codexCavemanMemory(), filepath.Join("/tmp/cxh", "AGENTS.md"); got != want {
