@@ -37,14 +37,29 @@ func TestInitSandboxWiring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create .codex: %v", err)
 	}
+	err = os.MkdirAll(filepath.Join(tempdir, ".gemini", "antigravity"), 0755)
+	if err != nil {
+		t.Fatalf("failed to create .gemini/antigravity: %v", err)
+	}
 
 	util.SetHomeOverride(tempdir)
 	t.Setenv("HOME", tempdir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tempdir, ".config"))
 	defer util.SetHomeOverride("")
 
+	// Antigravity wiring is partly project-scoped — run from a sandbox project dir.
+	proj := filepath.Join(tempdir, "proj")
+	if err := os.MkdirAll(proj, 0755); err != nil {
+		t.Fatalf("failed to create proj: %v", err)
+	}
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(proj); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(oldWd)
+
 	code := commands.RunInit(commands.InitOptions{
-		Agents: []string{"claude", "opencode", "codex"},
+		Agents: []string{"claude", "opencode", "codex", "antigravity"},
 	})
 	if code != 0 {
 		t.Errorf("RunInit returned non-zero code: %d", code)
@@ -104,6 +119,28 @@ func TestInitSandboxWiring(t *testing.T) {
 	codexHooksStr := string(codexHooksData)
 	if !strings.Contains(strings.ToLower(codexHooksStr), "context-mode hook codex pretooluse") {
 		t.Errorf("hooks.json doesn't contain 'context-mode hook codex pretooluse', got: %s", codexHooksStr)
+	}
+
+	// 5. <home>/.gemini/antigravity/mcp_config.json contains both MCP tools
+	agyMcpPath := filepath.Join(tempdir, ".gemini", "antigravity", "mcp_config.json")
+	agyMcpData, err := os.ReadFile(agyMcpPath)
+	if err != nil {
+		t.Fatalf("failed to read antigravity mcp_config.json: %v", err)
+	}
+	agyMcpStr := string(agyMcpData)
+	if !strings.Contains(agyMcpStr, "codegraph") {
+		t.Errorf("antigravity mcp_config.json doesn't contain 'codegraph', got: %s", agyMcpStr)
+	}
+	if !strings.Contains(agyMcpStr, "context-mode") {
+		t.Errorf("antigravity mcp_config.json doesn't contain 'context-mode', got: %s", agyMcpStr)
+	}
+
+	// 6. project-scoped antigravity artifacts: rtk rules + context-mode routing GEMINI.md
+	if _, err := os.Stat(filepath.Join(proj, ".agents", "rules", "antigravity-rtk-rules.md")); err != nil {
+		t.Errorf("antigravity rtk rules not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(proj, "GEMINI.md")); err != nil {
+		t.Errorf("antigravity GEMINI.md routing file not written: %v", err)
 	}
 }
 

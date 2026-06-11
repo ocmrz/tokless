@@ -80,6 +80,8 @@ func codegraphTestShim(agent string) bool {
 		agents.ConfigureOpenCodeMcp("codegraph")
 	case "codex":
 		agents.ConfigureCodexMcp("codegraph")
+	case "antigravity":
+		agents.ConfigureAntigravityMcp("codegraph")
 	}
 	return true
 }
@@ -124,6 +126,8 @@ func codegraphVerify(agent string) bool {
 		cx := util.CodexPathsResolved()
 		raw, _ := util.ReadFileSafe(cx.Config)
 		return strings.Contains(raw, "[mcp_servers.codegraph]")
+	case "antigravity":
+		return agents.AntigravityMcpHas("codegraph")
 	}
 	return false
 }
@@ -152,6 +156,9 @@ func codegraphWire(agent string) core.AgentFn {
 			return codegraphRealInstall(opts), nil
 		}
 		ran := codegraphRealInstall(opts)
+		if agent == "antigravity" && !codegraphVerify(agent) {
+			agents.ConfigureAntigravityMcp("codegraph")
+		}
 		wireAutoIndex(agent)
 		return ran && codegraphVerify(agent), nil
 	}
@@ -191,9 +198,10 @@ var codegraph = &core.ToolManifest{
 	Install:      codegraphEnsureInstalled,
 	IndexProject: codegraphIndexProject,
 	WireFor: map[string]core.AgentFn{
-		"claude":   codegraphWire("claude"),
-		"opencode": codegraphWire("opencode"),
-		"codex":    codegraphWire("codex"),
+		"claude":      codegraphWire("claude"),
+		"opencode":    codegraphWire("opencode"),
+		"codex":       codegraphWire("codex"),
+		"antigravity": codegraphWire("antigravity"),
 	},
 	UnwireFor: map[string]core.AgentFn{
 		"claude": func(core.RunOpts) (bool, error) {
@@ -218,10 +226,15 @@ var codegraph = &core.ToolManifest{
 			unwireAutoIndex("codex")
 			return true, nil
 		},
+		"antigravity": func(core.RunOpts) (bool, error) {
+			agents.RemoveAntigravityMcp("codegraph")
+			return true, nil
+		},
 	},
 	VerifyFor: map[string]core.VerifyFn{
-		"claude":   func() *bool { return core.BoolPtr(codegraphVerify("claude")) },
-		"opencode": func() *bool { return core.BoolPtr(codegraphVerify("opencode")) },
-		"codex":    func() *bool { return core.BoolPtr(codegraphVerify("codex")) },
+		"claude":      func() *bool { return core.BoolPtr(codegraphVerify("claude")) },
+		"opencode":    func() *bool { return core.BoolPtr(codegraphVerify("opencode")) },
+		"codex":       func() *bool { return core.BoolPtr(codegraphVerify("codex")) },
+		"antigravity": func() *bool { return core.BoolPtr(codegraphVerify("antigravity")) },
 	},
 }
