@@ -34,4 +34,10 @@ $key.Close()
 
 $v = & $dest --version 2>$null
 Write-Host "✔ tokless $v ready → $dest" -ForegroundColor Green
-Write-Host "Open a new terminal, then run: tokless" -ForegroundColor Cyan
+
+if ([Environment]::UserInteractive -and -not $env:CI) {
+    Write-Host ""
+    & $dest
+} else {
+    Write-Host "Run: tokless" -ForegroundColor Cyan
+}
