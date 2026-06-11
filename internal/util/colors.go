@@ -9,9 +9,12 @@ func stdoutIsTTY() bool { return isTerminal(os.Stdout.Fd()) }
 
 // StdoutIsTTY reports whether stdout is a real terminal.
 func StdoutIsTTY() bool { return stdoutIsTTY() }
+func StdoutANSI() bool  { return stdoutIsTTY() && vtReady }
+
+var vtReady = enableVT()
 
 // colorsEnabled gates all ANSI output.
-var colorsEnabled = stdoutIsTTY() && os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"
+var colorsEnabled = stdoutIsTTY() && vtReady && os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"
 
 func wrap(open, close int) func(string) string {
 	return func(s string) string {

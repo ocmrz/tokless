@@ -122,4 +122,4 @@ func listToolVersions(tools []*core.ToolManifest, v map[string]util.VersionInfo)
 	}
 }
 
-func stdoutTTY() bool { return util.StdoutIsTTY() }
+func stdoutTTY() bool { return util.StdoutANSI() }

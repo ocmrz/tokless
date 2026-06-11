@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -24,40 +24,6 @@ func stdinIsTTY() bool { return isTerminal(os.Stdin.Fd()) }
 // IsInteractive reports whether we can run an interactive prompt (stdin is a TTY).
 func IsInteractive() bool { return stdinIsTTY() }
 
-// rawMode toggles terminal raw mode via stty; returns a restore func.
-func rawMode() (func(), bool) {
-	if IsWin {
-		return func() {}, false
-	}
-	saved, err := exec.Command("stty", "-F", "/dev/tty", "-g").Output()
-	if err != nil {
-		c := exec.Command("stty", "-g")
-		c.Stdin = os.Stdin
-		saved, err = c.Output()
-		if err != nil {
-			return func() {}, false
-		}
-	}
-	set := exec.Command("stty", "-F", "/dev/tty", "raw", "-echo")
-	if set.Run() != nil {
-		c := exec.Command("stty", "raw", "-echo")
-		c.Stdin = os.Stdin
-		if c.Run() != nil {
-			return func() {}, false
-		}
-	}
-	restore := func() {
-		s := strings.TrimSpace(string(saved))
-		r := exec.Command("stty", "-F", "/dev/tty", s)
-		if r.Run() != nil {
-			c := exec.Command("stty", s)
-			c.Stdin = os.Stdin
-			_ = c.Run()
-		}
-	}
-	return restore, true
-}
-
 // MultiSelect renders an interactive checklist; non-TTY returns enabled defaults.
 func MultiSelect(question string, options []MultiSelectOption) []string {
 	if !stdinIsTTY() {
@@ -76,16 +42,17 @@ func MultiSelect(question string, options []MultiSelectOption) []string {
 	for cursor < len(items) && items[cursor].Disabled {
 		cursor++
 	}
+	if cursor == len(items) {
+		return multiSelectLine(question, items)
+	}
 
+	// The full-screen picker needs both raw key input and ANSI redraws.
 	restore, ok := rawMode()
-	if !ok {
-		var out []string
-		for _, o := range options {
-			if !o.Disabled && o.Selected {
-				out = append(out, o.Value)
-			}
+	if !ok || !vtReady {
+		if ok {
+			restore()
 		}
-		return out
+		return multiSelectLine(question, items)
 	}
 	defer restore()
 
@@ -215,6 +182,73 @@ func moveCursor(cursor *int, items []MultiSelectOption, delta int) {
 			return
 		}
 	}
+}
+
+// multiSelectLine is the cooked-mode fallback picker: numbered list, read a
+// line. Enter keeps the preselected defaults; "a" selects everything enabled.
+func multiSelectLine(question string, items []MultiSelectOption) []string {
+	fmt.Fprintln(os.Stdout, C.Bold(C.Cyan("?"))+" "+C.Bold(question))
+	var defaults []string
+	num := 0
+	numByIdx := make([]int, len(items))
+	for i, it := range items {
+		if it.Disabled {
+			numByIdx[i] = 0
+			line := "      " + C.Dim(it.Label) + "  " + C.Yellow("[MISSING]")
+			if it.Hint != "" {
+				line += "  " + C.Dim(it.Hint)
+			}
+			fmt.Fprintln(os.Stdout, line)
+			continue
+		}
+		num++
+		numByIdx[i] = num
+		mark := " "
+		if it.Selected {
+			mark = "*"
+			defaults = append(defaults, it.Value)
+		}
+		fmt.Fprintf(os.Stdout, "  %2d) %s%s  %s\n", num, mark, it.Label, C.Green("[READY]"))
+	}
+	if num == 0 {
+		return nil
+	}
+	hint := "none"
+	if len(defaults) > 0 {
+		hint = "keep *"
+	}
+	fmt.Fprint(os.Stdout, "  "+C.Gray("Numbers comma-separated, 'a' = all, Enter = "+hint+": "))
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	return parseLineSelection(line, items, numByIdx, defaults)
+}
+
+// parseLineSelection resolves a typed selection ("", "a", "1,3") to values.
+func parseLineSelection(line string, items []MultiSelectOption, numByIdx []int, defaults []string) []string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return defaults
+	}
+	var out []string
+	if strings.EqualFold(line, "a") {
+		for _, it := range items {
+			if !it.Disabled {
+				out = append(out, it.Value)
+			}
+		}
+		return out
+	}
+	want := map[int]bool{}
+	for _, tok := range strings.Split(line, ",") {
+		if n, err := strconv.Atoi(strings.TrimSpace(tok)); err == nil {
+			want[n] = true
+		}
+	}
+	for i, it := range items {
+		if numByIdx[i] > 0 && want[numByIdx[i]] {
+			out = append(out, it.Value)
+		}
+	}
+	return out
 }
 
 // Confirm prompts yes/no; non-TTY returns defaultYes.

@@ -25,7 +25,7 @@ type Progress struct {
 }
 
 func NewProgress(title string) *Progress {
-	return &Progress{title: title, tty: stdoutIsTTY(), out: os.Stdout}
+	return &Progress{title: title, tty: stdoutIsTTY() && vtReady, out: os.Stdout}
 }
 
 func (p *Progress) Start(total int) {
