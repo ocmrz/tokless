@@ -88,7 +88,7 @@ func MultiSelect(question string, options []MultiSelectOption) []string {
 
 			var box, label, tag, extra string
 			if it.Disabled {
-				box = C.Dim("·")
+				box = C.Dim(Sym.Disabled)
 				label = C.Dim(it.Label)
 				tag = C.Yellow("[MISSING]")
 				if it.Hint != "" {
@@ -102,7 +102,7 @@ func MultiSelect(question string, options []MultiSelectOption) []string {
 					box = C.Gray(Sym.Unselected)
 					label = it.Label
 				}
-				tag = C.Green("[READY]")
+				tag = C.Green("[READY]") + "  "
 				if it.Hint != "" {
 					extra = "  " + C.Dim(it.Hint)
 				}
@@ -191,13 +191,20 @@ func moveCursor(cursor *int, items []MultiSelectOption, delta int) {
 // line. Enter keeps the preselected defaults; "a" selects everything enabled.
 func multiSelectLine(question string, items []MultiSelectOption) []string {
 	fmt.Fprintln(os.Stdout, C.Bold(C.Cyan("?"))+" "+C.Bold(question))
+	labelW := 0
+	for _, it := range items {
+		if n := utf8.RuneCountInString(it.Label); n > labelW {
+			labelW = n
+		}
+	}
 	var defaults []string
 	num := 0
 	numByIdx := make([]int, len(items))
 	for i, it := range items {
+		pad := strings.Repeat(" ", labelW-utf8.RuneCountInString(it.Label))
 		if it.Disabled {
 			numByIdx[i] = 0
-			line := "      " + C.Dim(it.Label) + "  " + C.Yellow("[MISSING]")
+			line := "       " + C.Dim(it.Label) + pad + "  " + C.Yellow("[MISSING]")
 			if it.Hint != "" {
 				line += "  " + C.Dim(it.Hint)
 			}
@@ -211,7 +218,7 @@ func multiSelectLine(question string, items []MultiSelectOption) []string {
 			mark = "*"
 			defaults = append(defaults, it.Value)
 		}
-		line := fmt.Sprintf("  %2d) %s%s  %s", num, mark, it.Label, C.Green("[READY]"))
+		line := fmt.Sprintf("  %2d) %s%s%s  %s", num, mark, it.Label, pad, C.Green("[READY]")+"  ")
 		if it.Hint != "" {
 			line += "  " + C.Dim(it.Hint)
 		}

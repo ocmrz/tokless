@@ -51,7 +51,7 @@ var C = Colors{
 
 // Symbols carries unicode glyphs with ascii fallbacks.
 type Symbols struct {
-	Bullet, Arrow, Check, Cross, Warn, Info, Selected, Unselected, Pointer string
+	Bullet, Arrow, Check, Cross, Warn, Info, Selected, Unselected, Disabled, Pointer string
 }
 
 func pick(uni, ascii string) string {
@@ -70,5 +70,6 @@ var Sym = Symbols{
 	Info:       pick("ℹ", "i"),
 	Selected:   pick("◉", "(x)"),
 	Unselected: pick("◯", "( )"),
+	Disabled:   pick("·", " - "),
 	Pointer:    pick("❯", ">"),
 }
