@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -120,10 +122,35 @@ func NpmGlobalInstall(pkg, spec string) (string, bool) {
 		}
 		actual := npmReadInstalled(pkg)
 		if v, good := installSucceeded(target, actual); good {
+			ensureNpmGlobalBinOnPath()
 			return v, true
 		}
 	}
 	return "", false
+}
+
+var npmPrefix = func() string {
+	r := Run("npm", []string{"config", "get", "prefix"}, RunOptions{Capture: true})
+	if r.Code != 0 {
+		return ""
+	}
+	return strings.TrimSpace(r.Stdout)
+}
+
+func ensureNpmGlobalBinOnPath() {
+	prefix := npmPrefix()
+	if prefix == "" {
+		return
+	}
+	PrependProcessPath(npmGlobalBinDir(prefix, IsWin))
+}
+
+// npmGlobalBinDir maps an npm prefix to its global bin dir.
+func npmGlobalBinDir(prefix string, win bool) string {
+	if win {
+		return prefix
+	}
+	return filepath.Join(prefix, "bin")
 }
 
 func freshCacheDir() string {
