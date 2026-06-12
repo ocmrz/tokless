@@ -32,8 +32,9 @@ func RunInit(opts InitOptions) int {
 	util.L.Raw("")
 	util.L.Raw("  " + util.C.Bold(util.C.Cyan("tokless")) + util.C.Gray("  global token-saver for AI agents"))
 
+	nodeOK := true
 	if !opts.DryRun {
-		util.EnsureNodeForTools()
+		nodeOK = util.EnsureNodeForTools()
 	}
 
 	allTools := core.ListTools()
@@ -52,14 +53,23 @@ func RunInit(opts InitOptions) int {
 	toolBar.Start(len(tools))
 	for _, tool := range tools {
 		toolBar.Begin(tool.Label)
+		if tool.Channel == core.ChannelNpm && !nodeOK {
+			toolBar.Fail("needs Node.js — https://nodejs.org/en/download")
+			continue
+		}
 		report := func(phase string, frac float64) { toolBar.Step(phase, frac) }
+		installed := false
 		err := util.WithSilencedLogs(func() error {
-			_, e := tool.Install(core.RunOpts{DryRun: opts.DryRun, Upgrade: opts.Upgrade, Report: report})
+			ok, e := tool.Install(core.RunOpts{DryRun: opts.DryRun, Upgrade: opts.Upgrade, Report: report})
+			installed = ok
 			return e
 		})
-		if err != nil {
+		switch {
+		case err != nil:
 			toolBar.Fail(firstLine(err.Error()))
-		} else {
+		case !installed:
+			toolBar.Fail("install failed")
+		default:
 			toolBar.Complete(toolVersionNote(tool))
 		}
 	}
