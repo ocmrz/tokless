@@ -88,7 +88,7 @@ func buildNpmAttempts(pkg, resolvedVersion, tarball, cacheDir string) [][]string
 
 func installSucceeded(target string, actual *string) (string, bool) {
 	if actual == nil {
-		return target, true
+		return "", false
 	}
 	if target == "" || *actual == target {
 		return *actual, true
