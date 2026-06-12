@@ -38,13 +38,39 @@ func ensureOpencodeCommandsDir() {
 	_ = os.MkdirAll(filepath.Join(util.OpenCodePathsResolved().Dir, "commands"), 0o755)
 }
 
-func installOpencodeCavemanSkills(opts core.RunOpts) {
-	args := []string{"-y", "skills", "add", "JuliusBrussee/caveman", "-a", "opencode", "--yes", "--all", "-g"}
-	ok, _ := cavemanExec("npx", args, opts,
-		"npx -y skills add JuliusBrussee/caveman -a opencode --yes --all -g", cavemanOpencodeInstallEnv()...)
-	if !ok {
-		util.L.Warn("caveman skills for opencode didn't install (plugin+commands are wired)")
+func cavemanSkillsAddArgs(agent string) []string {
+	return []string{"-y", "skills", "add", "JuliusBrussee/caveman", "-a", agent, "-s", "*", "--yes", "-g"}
+}
+
+func cavemanSkillsRemoveArgs(agent string) []string {
+	args := append([]string{"-y", "skills", "remove"}, cavemanSkillNames...)
+	return append(args, "-a", agent, "-y", "-g")
+}
+
+func relocateCavemanSkills(dstDir string) {
+	src := filepath.Join(util.Home(), ".agents", "skills")
+	for _, name := range cavemanSkillNames {
+		s := filepath.Join(src, name)
+		if !util.Exists(s) {
+			continue
+		}
+		if util.CopyDirMerge(s, filepath.Join(dstDir, name)) == nil {
+			_ = os.RemoveAll(s)
+		}
 	}
+}
+
+func removeCavemanSkillCopies(dir string) {
+	for _, name := range cavemanSkillNames {
+		_ = os.RemoveAll(filepath.Join(dir, name))
+	}
+}
+
+func codexSkillsDir() string {
+	if dir := os.Getenv("CODEX_HOME"); dir != "" {
+		return filepath.Join(dir, "skills")
+	}
+	return filepath.Join(util.Home(), ".codex", "skills")
 }
 
 func stampCavemanVersion() {
@@ -295,18 +321,6 @@ func antigravityCavemanInstalled() bool {
 		util.Exists(filepath.Join(util.Home(), ".gemini", "antigravity", "skills", "caveman"))
 }
 
-// syncAntigravityGlobalSkills mirrors the 7 globally installed skills from
-// ~/.agents/skills (skills -g target, codex-visible) into ~/.gemini/config/skills.
-func syncAntigravityGlobalSkills() {
-	src := filepath.Join(util.Home(), ".agents", "skills")
-	dst := util.AntigravityPathsResolved().SkillsDir
-	for _, name := range cavemanSkillNames {
-		if util.Exists(filepath.Join(src, name)) {
-			_ = util.CopyDirMerge(filepath.Join(src, name), filepath.Join(dst, name))
-		}
-	}
-}
-
 var cavemanSkillNames = []string{
 	"caveman", "caveman-commit", "caveman-compress", "caveman-help",
 	"caveman-review", "caveman-stats", "cavecrew",
@@ -392,7 +406,6 @@ var caveman = &core.ToolManifest{
 			}
 			if opencodePluginFilesPresent() {
 				registerCavemanOpencode()
-				installOpencodeCavemanSkills(opts)
 
 				op := util.OpenCodePathsResolved()
 				pkgPath := filepath.Join(op.Dir, "plugins", "caveman", "package.json")
@@ -415,21 +428,22 @@ var caveman = &core.ToolManifest{
 			return opencodePluginInstalled(), err
 		},
 		"codex": func(opts core.RunOpts) (bool, error) {
-			args := []string{"-y", "skills", "add", "JuliusBrussee/caveman", "-a", "codex", "--yes", "--all", "-g"}
-			ran, err := cavemanExec("npx", args, opts, "npx -y skills add JuliusBrussee/caveman -a codex --yes --all -g")
+			args := cavemanSkillsAddArgs("codex")
+			ran, err := cavemanExec("npx", args, opts, "npx "+strings.Join(args, " "))
 			if opts.DryRun || isTest() {
 				return ran, err
 			}
+			relocateCavemanSkills(codexSkillsDir())
 			stampCavemanVersion()
 			return codexCavemanInstalled(), err
 		},
 		"antigravity": func(opts core.RunOpts) (bool, error) {
-			args := []string{"-y", "skills", "add", "JuliusBrussee/caveman", "-a", "antigravity", "--yes", "--all", "-g"}
-			ran, err := cavemanExec("npx", args, opts, "npx -y skills add JuliusBrussee/caveman -a antigravity --yes --all -g")
+			args := cavemanSkillsAddArgs("antigravity")
+			ran, err := cavemanExec("npx", args, opts, "npx "+strings.Join(args, " "))
 			if opts.DryRun || isTest() {
 				return ran, err
 			}
-			syncAntigravityGlobalSkills()
+			relocateCavemanSkills(util.AntigravityPathsResolved().SkillsDir)
 			stampCavemanVersion()
 			return antigravityCavemanInstalled(), err
 		},
@@ -474,23 +488,19 @@ var caveman = &core.ToolManifest{
 			return true, nil
 		},
 		"codex": func(opts core.RunOpts) (bool, error) {
-			args := append([]string{"-y", "skills", "remove"}, cavemanSkillNames...)
-			args = append(args, "-y", "-g")
-			ran, err := cavemanExec("npx", args, opts, "npx -y skills remove <7 caveman skills> -y -g")
+			ran, err := cavemanExec("npx", cavemanSkillsRemoveArgs("codex"), opts,
+				"npx -y skills remove <7 caveman skills> -a codex -y -g")
 			if !opts.DryRun && !isTest() {
+				removeCavemanSkillCopies(codexSkillsDir())
 				removeCavemanRuleset(codexCavemanMemory())
 			}
 			return ran, err
 		},
 		"antigravity": func(opts core.RunOpts) (bool, error) {
-			args := append([]string{"-y", "skills", "remove"}, cavemanSkillNames...)
-			args = append(args, "-y", "-g")
-			ran, err := cavemanExec("npx", args, opts, "npx -y skills remove <7 caveman skills> -y -g")
+			ran, err := cavemanExec("npx", cavemanSkillsRemoveArgs("antigravity"), opts,
+				"npx -y skills remove <7 caveman skills> -a antigravity -y -g")
 			if !opts.DryRun && !isTest() {
-				dst := util.AntigravityPathsResolved().SkillsDir
-				for _, name := range cavemanSkillNames {
-					_ = os.RemoveAll(filepath.Join(dst, name))
-				}
+				removeCavemanSkillCopies(util.AntigravityPathsResolved().SkillsDir)
 			}
 			return ran, err
 		},
