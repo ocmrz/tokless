@@ -60,6 +60,8 @@ type ToolManifest struct {
 	UnwireFor    map[string]AgentFn
 	VerifyFor    map[string]VerifyFn
 	IndexProject func(dir string, opts RunOpts) (bool, error)
+	Indexed      func(dir string) bool
+	IndexReady   func() bool
 }
 
 // registries are global and populated at startup by agents/tools packages.

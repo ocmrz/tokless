@@ -198,6 +198,8 @@ var codegraph = &core.ToolManifest{
 	Channel:      core.ChannelNpm,
 	Install:      codegraphEnsureInstalled,
 	IndexProject: codegraphIndexProject,
+	Indexed:      func(dir string) bool { return util.Exists(filepath.Join(dir, ".codegraph")) },
+	IndexReady:   func() bool { return util.Which("codegraph") != "" },
 	WireFor: map[string]core.AgentFn{
 		"claude":      codegraphWire("claude"),
 		"opencode":    codegraphWire("opencode"),

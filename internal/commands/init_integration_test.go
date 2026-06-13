@@ -151,6 +151,44 @@ func TestInitSandboxWiring(t *testing.T) {
 	}
 }
 
+// TestAutoIndexRtkIndependentOfCodegraph proves auto-index creates RTK's
+// antigravity rules even when codegraph already indexed the project (regression).
+func TestAutoIndexRtkIndependentOfCodegraph(t *testing.T) {
+	t.Setenv("TOKLESS_TEST", "1")
+	tempdir := t.TempDir()
+	for _, d := range []string{".claude", filepath.Join(".config", "opencode"), ".codex", filepath.Join(".gemini", "antigravity")} {
+		if err := os.MkdirAll(filepath.Join(tempdir, d), 0755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	util.SetHomeOverride(tempdir)
+	t.Setenv("HOME", tempdir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tempdir, ".config"))
+	defer util.SetHomeOverride("")
+
+	proj := filepath.Join(tempdir, "proj")
+	if err := os.MkdirAll(filepath.Join(proj, ".git"), 0755); err != nil {
+		t.Fatalf("mkdir proj: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(proj, ".codegraph"), 0755); err != nil {
+		t.Fatalf("mkdir .codegraph: %v", err)
+	}
+	oldWd, _ := os.Getwd()
+	if err := os.Chdir(proj); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(oldWd)
+
+	if code := commands.RunInit(commands.InitOptions{Agents: []string{"claude", "antigravity"}}); code != 0 {
+		t.Fatalf("RunInit returned non-zero code: %d", code)
+	}
+	commands.RunIndex(commands.InitOptions{}, true)
+
+	if _, err := os.Stat(filepath.Join(proj, ".agents", "rules", "antigravity-rtk-rules.md")); err != nil {
+		t.Errorf("auto-index did not write RTK antigravity rules: %v", err)
+	}
+}
+
 func getSHA256(path string) (string, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {

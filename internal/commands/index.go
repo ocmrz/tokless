@@ -67,12 +67,6 @@ func RunIndex(opts InitOptions, auto bool) int {
 		if !looksLikeProject(dir) {
 			return 0
 		}
-		if util.Exists(filepath.Join(dir, ".codegraph")) {
-			return 0
-		}
-		if util.Which("codegraph") == "" {
-			return 0
-		}
 	}
 
 	var indexable []*core.ToolManifest
@@ -99,18 +93,17 @@ func RunIndex(opts InitOptions, auto bool) int {
 	ro := core.RunOpts{DryRun: opts.DryRun}
 	failed := 0
 	for _, t := range indexable {
-		// already indexed: cheap skip, idempotent
-		if t.ID == "codegraph" && util.Exists(filepath.Join(dir, ".codegraph")) {
+		if t.Indexed != nil && t.Indexed(dir) {
 			if !auto {
 				util.L.Raw("  " + util.C.Green("✔ ") + t.Label + util.C.Gray("  already indexed"))
 			}
 			continue
 		}
-		if util.Which("codegraph") == "" && t.ID == "codegraph" {
+		if t.IndexReady != nil && !t.IndexReady() {
 			if !auto {
 				util.L.Raw("  " + util.C.Gray("• ") + t.Label + util.C.Gray("  not installed — run tokless first"))
+				failed++
 			}
-			failed++
 			continue
 		}
 		ok, ierr := t.IndexProject(dir, ro)
