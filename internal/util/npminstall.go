@@ -10,7 +10,22 @@ import (
 	"time"
 )
 
-const registryURL = "https://registry.npmjs.org/"
+const defaultRegistryURL = "https://registry.npmjs.org/"
+
+// npmRegistryBase returns the user's configured npm registry.
+func npmRegistryBase() string {
+	if Which("npm") != "" {
+		r := Run("npm", []string{"config", "get", "registry"}, RunOptions{Capture: true})
+		v := strings.TrimSpace(r.Stdout)
+		if r.Code == 0 && strings.HasPrefix(v, "http") {
+			if !strings.HasSuffix(v, "/") {
+				v += "/"
+			}
+			return v
+		}
+	}
+	return defaultRegistryURL
+}
 
 type registryDoc struct {
 	DistTags map[string]string `json:"dist-tags"`
@@ -25,7 +40,7 @@ type registryDoc struct {
 // resolveFromRegistry resolves the version and tarball URL for a package spec.
 func resolveFromRegistry(pkg, spec string) (string, string, bool) {
 	client := &http.Client{Timeout: 5 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, registryURL+url.QueryEscape(pkg), nil)
+	req, err := http.NewRequest(http.MethodGet, npmRegistryBase()+url.QueryEscape(pkg), nil)
 	if err != nil {
 		return "", "", false
 	}
@@ -77,12 +92,12 @@ func buildNpmAttempts(pkg, resolvedVersion, tarball, cacheDir string) [][]string
 	}
 	attempts := [][]string{
 		append([]string{"install", "-g", token}, online...),
-		append([]string{"install", "-g", token, "--registry", registryURL}, online...),
 	}
 	if tarball != "" {
 		attempts = append(attempts, append([]string{"install", "-g", tarball}, online...))
 	}
 	attempts = append(attempts, []string{"install", "-g", token})
+	attempts = append(attempts, append([]string{"install", "-g", token, "--registry", defaultRegistryURL}, online...))
 	return attempts
 }
 
