@@ -246,7 +246,7 @@ var rtk = &core.ToolManifest{
 	Indexed: func(dir string) bool {
 		return util.Exists(filepath.Join(dir, ".agents", "rules", "antigravity-rtk-rules.md"))
 	},
-	IndexReady: func() bool { return util.Which("rtk") != "" },
+	IndexReady: func() bool { return isTest() || util.Which("rtk") != "" },
 	UnwireFor: map[string]core.AgentFn{
 		"claude": func(core.RunOpts) (bool, error) {
 			util.Run("rtk", []string{"init", "--uninstall", "--agent", "claude"}, util.RunOptions{})

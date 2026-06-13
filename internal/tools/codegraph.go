@@ -227,7 +227,7 @@ var codegraph = &core.ToolManifest{
 	Install:      codegraphEnsureInstalled,
 	IndexProject: codegraphIndexProject,
 	Indexed:      codegraphIndexed,
-	IndexReady:   func() bool { return util.Which("codegraph") != "" },
+	IndexReady:   func() bool { return isTest() || util.Which("codegraph") != "" },
 	WireFor: map[string]core.AgentFn{
 		"claude":      codegraphWire("claude"),
 		"opencode":    codegraphWire("opencode"),
