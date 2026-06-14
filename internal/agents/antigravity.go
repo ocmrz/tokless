@@ -3,6 +3,7 @@ package agents
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/HoangP8/tokless/internal/core"
 	"github.com/HoangP8/tokless/internal/util"
@@ -33,11 +34,69 @@ func antigravitySettingsFiles() []string {
 	return files
 }
 
-// MirrorAntigravityHooks copies the hooks block rtk wrote into ~/.gemini/settings.json
-// into the per-surface settings files agy reads (CLI + IDE), preserving other keys.
-func MirrorAntigravityHooks() {
-	src := filepath.Join(util.Home(), ".gemini", "settings.json")
-	raw, ok := util.ReadFileSafe(src)
+func antigravityHooksFile() string {
+	return filepath.Join(util.Home(), ".gemini", "config", "hooks.json")
+}
+
+func antigravityRewriteScript() string {
+	return filepath.Join(util.Home(), ".gemini", "config", "tokless-rtk-rewrite.sh")
+}
+
+func getToklessAbs() string {
+	exe, err := os.Executable()
+	if err == nil && exe != "" {
+		return exe
+	}
+	return "tokless"
+}
+
+// InstallAntigravityRtkHook installs the PreToolUse hook for agy.
+func InstallAntigravityRtkHook() {
+	script := antigravityRewriteScript()
+	_ = util.EnsureDir(filepath.Dir(script))
+	wrapper := "#!/bin/sh\nexec \"" + getToklessAbs() + "\" rtk-hook agy\n"
+	_ = util.WriteFile(script, wrapper)
+	_ = os.Chmod(script, 0o755)
+
+	hooksFile := antigravityHooksFile()
+	raw, ok := util.ReadFileSafe(hooksFile)
+	var cfg *util.OrderedMap
+	if ok {
+		cfg = util.TryParseJsonc(raw)
+	}
+	if cfg == nil {
+		cfg = util.NewOrderedMap()
+	}
+
+	rtkGroup := util.NewOrderedMap()
+
+	hookCfg := util.NewOrderedMap()
+	hookCfg.Set("type", "command")
+	hookCfg.Set("command", script)
+	hookCfg.Set("timeout", 10)
+
+	preToolUseEntry := util.NewOrderedMap()
+	preToolUseEntry.Set("matcher", "")
+	preToolUseEntry.Set("hooks", []interface{}{hookCfg})
+
+	rtkGroup.Set("PreToolUse", []interface{}{preToolUseEntry})
+	rtkGroup.Set("PostToolUse", nil)
+	rtkGroup.Set("PreInvocation", nil)
+	rtkGroup.Set("PostInvocation", nil)
+	rtkGroup.Set("Stop", nil)
+
+	cfg.Set("rtk", rtkGroup)
+
+	if next := util.StringifyJSON(cfg); next != raw {
+		_ = util.WriteFile(hooksFile, next)
+	}
+}
+
+// RemoveAntigravityRtkHook removes the PreToolUse hook for agy.
+func RemoveAntigravityRtkHook() {
+	_ = os.Remove(antigravityRewriteScript())
+	hooksFile := antigravityHooksFile()
+	raw, ok := util.ReadFileSafe(hooksFile)
 	if !ok {
 		return
 	}
@@ -45,22 +104,63 @@ func MirrorAntigravityHooks() {
 	if cfg == nil {
 		return
 	}
-	hk, ok := cfg.Get("hooks")
+	if _, ok := cfg.Get("rtk"); ok {
+		cfg.Delete("rtk")
+		_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
+	}
+}
+
+// HasAntigravityRtkHook reports whether the hook is installed.
+func HasAntigravityRtkHook() bool {
+	raw, ok := util.ReadFileSafe(antigravityHooksFile())
 	if !ok {
-		return
+		return false
 	}
-	for _, f := range antigravitySettingsFiles() {
-		_ = util.EnsureDir(filepath.Dir(f))
-		draw, _ := util.ReadFileSafe(f)
-		dst := util.TryParseJsonc(draw)
-		if dst == nil {
-			dst = util.NewOrderedMap()
-		}
-		dst.Set("hooks", hk)
-		if next := util.StringifyJSON(dst); next != draw {
-			_ = util.WriteFile(f, next)
-		}
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return false
 	}
+	rtkObj, ok := cfg.Get("rtk")
+	if !ok {
+		return false
+	}
+	rtkGroup, ok := rtkObj.(*util.OrderedMap)
+	if !ok {
+		return false
+	}
+	pre, ok := rtkGroup.Get("PreToolUse")
+	if !ok {
+		return false
+	}
+	preArr, ok := pre.([]interface{})
+	if !ok || len(preArr) == 0 {
+		return false
+	}
+	entry, ok := preArr[0].(*util.OrderedMap)
+	if !ok {
+		return false
+	}
+	hooksObj, ok := entry.Get("hooks")
+	if !ok {
+		return false
+	}
+	hooksArr, ok := hooksObj.([]interface{})
+	if !ok || len(hooksArr) == 0 {
+		return false
+	}
+	hook, ok := hooksArr[0].(*util.OrderedMap)
+	if !ok {
+		return false
+	}
+	cmd, ok := hook.Get("command")
+	if !ok {
+		return false
+	}
+	cmdStr, ok := cmd.(string)
+	if !ok {
+		return false
+	}
+	return strings.Contains(cmdStr, "tokless-rtk-rewrite")
 }
 
 // allowAntigravityEntry adds a permissions.allow rule so agy auto-approves it.
