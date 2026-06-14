@@ -165,8 +165,11 @@ func TestInitSandboxWiring(t *testing.T) {
 	if !strings.Contains(string(hooksContent), "tokless-rtk-rewrite") {
 		t.Errorf("antigravity hooks.json does not contain tokless-rtk-rewrite")
 	}
-	if _, err := os.Stat(filepath.Join(proj, ".agents", "rules", "antigravity-rtk-rules.md")); err != nil {
-		t.Errorf("antigravity rtk rules not written: %v", err)
+	// rtk no longer installs an instruction rule for antigravity — the native
+	// PreToolUse hook rewrites bare commands transparently, so the model needs
+	// no rtk instructions at all.
+	if _, err := os.Stat(filepath.Join(proj, ".agents", "rules", "antigravity-rtk-rules.md")); err == nil {
+		t.Errorf("antigravity rtk instruction rule should NOT be written (native hook handles rewriting)")
 	}
 	if _, err := os.Stat(filepath.Join(proj, ".agents", "rules", "antigravity-codegraph-rules.md")); err == nil {
 		t.Errorf("fabricated antigravity-codegraph-rules.md should not be written")
@@ -213,8 +216,14 @@ func TestAutoIndexRtkIndependentOfCodegraph(t *testing.T) {
 	}
 	commands.RunIndex(commands.InitOptions{}, true)
 
-	if _, err := os.Stat(filepath.Join(proj, ".agents", "rules", "antigravity-rtk-rules.md")); err != nil {
-		t.Errorf("auto-index did not write RTK antigravity rules: %v", err)
+	// rtk for antigravity is wired purely as a native PreToolUse hook (no
+	// per-project instruction rule). Confirm the hook is installed and that no
+	// rtk instruction file is written.
+	if !util.Exists(filepath.Join(tempdir, ".gemini", "config", "hooks.json")) {
+		t.Errorf("antigravity rtk PreToolUse hook (hooks.json) not installed")
+	}
+	if _, err := os.Stat(filepath.Join(proj, ".agents", "rules", "antigravity-rtk-rules.md")); err == nil {
+		t.Errorf("antigravity rtk instruction rule should NOT be written")
 	}
 }
 

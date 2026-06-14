@@ -237,10 +237,6 @@ func rtkWire(agent string) core.AgentFn {
 	}
 }
 
-func rtkIndexForAgent(agent string) bool {
-	return agent == "" || agent == "antigravity"
-}
-
 var rtk = &core.ToolManifest{
 	ID:          "rtk",
 	Label:       "RTK",
@@ -255,26 +251,6 @@ var rtk = &core.ToolManifest{
 		"codex":       rtkWire("codex"),
 		"antigravity": rtkWireAntigravity(),
 	},
-	IndexProject: func(dir string, opts core.RunOpts) (bool, error) {
-		if !rtkIndexForAgent(opts.Agent) {
-			return true, nil
-		}
-		if os.Getenv("TOKLESS_TEST") == "1" {
-			rulesDir := filepath.Join(dir, ".agents", "rules")
-			_ = os.MkdirAll(rulesDir, 0o755)
-			writeIfMissing(filepath.Join(rulesDir, "antigravity-rtk-rules.md"), "# RTK - Rust Token Killer (Google Antigravity)\n(tokless test stub)\n")
-			return true, nil
-		}
-		r := util.Run("rtk", []string{"init", "--agent", "antigravity"}, util.RunOptions{Cwd: dir, Capture: true})
-		return r.Code == 0, nil
-	},
-	Indexed: func(dir string, opts core.RunOpts) bool {
-		if !rtkIndexForAgent(opts.Agent) {
-			return true
-		}
-		return util.Exists(filepath.Join(dir, ".agents", "rules", "antigravity-rtk-rules.md"))
-	},
-	IndexReady: func() bool { return isTest() || util.Which("rtk") != "" },
 	UnwireFor: map[string]core.AgentFn{
 		"claude": func(core.RunOpts) (bool, error) {
 			util.Run("rtk", []string{"init", "--uninstall", "--agent", "claude"}, util.RunOptions{})
