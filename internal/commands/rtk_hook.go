@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -49,13 +50,12 @@ func RunRtkHook() int {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "rtk", "hook", "check", cmdLine)
-	outBytes, err := cmd.Output()
-	if err != nil {
-		return 0
-	}
+	cmd := exec.CommandContext(ctx, "rtk", "rewrite", cmdLine)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	_ = cmd.Run()
 
-	newCmd := strings.TrimSpace(string(outBytes))
+	newCmd := strings.TrimSpace(stdout.String())
 	if newCmd == "" || strings.HasPrefix(newCmd, "No rewrite") || newCmd == cmdLine {
 		return 0
 	}

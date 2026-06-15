@@ -24,14 +24,35 @@ func antigravityMcpFiles() []string {
 
 func antigravitySettingsFiles() []string {
 	gemini := filepath.Join(util.Home(), ".gemini")
-	files := []string{
+	return []string{
 		filepath.Join(gemini, "antigravity-cli", "settings.json"),
+	}
+}
+
+func antigravityDeadGuiSettingsFiles() []string {
+	gemini := filepath.Join(util.Home(), ".gemini")
+	return []string{
 		filepath.Join(gemini, "antigravity-ide", "settings.json"),
+		filepath.Join(gemini, "antigravity-desktop", "settings.json"),
 	}
-	if d := filepath.Join(gemini, "antigravity-desktop"); util.Exists(d) {
-		files = append(files, filepath.Join(d, "settings.json"))
+}
+
+func cleanAntigravityDeadGuiSettings() {
+	for _, f := range antigravityDeadGuiSettingsFiles() {
+		raw, ok := util.ReadFileSafe(f)
+		if !ok {
+			continue
+		}
+		cfg := util.TryParseJsonc(raw)
+		if cfg == nil {
+			continue
+		}
+		if _, ok := cfg.Get("permissions"); !ok {
+			continue
+		}
+		cfg.Delete("permissions")
+		_ = util.WriteFile(f, util.StringifyJSON(cfg))
 	}
-	return files
 }
 
 func antigravityHooksFile() string {
@@ -64,6 +85,7 @@ func InstallAntigravityRtkHook() {
 
 	_ = os.Remove(antigravityRewriteScript())
 	_ = os.Remove(antigravityLegacyRewriteScript())
+	cleanAntigravityDeadGuiSettings()
 
 	hooksFile := antigravityHooksFile()
 	raw, ok := util.ReadFileSafe(hooksFile)
