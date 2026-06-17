@@ -22,11 +22,7 @@ func RunMcp(argv []string) int {
 	if strings.Contains(argv[0], string(filepath.Separator)) {
 		util.PrependProcessPath(filepath.Dir(argv[0]))
 	}
-	if agent != "antigravity" {
-		RunIndex(InitOptions{Agent: agent}, true)
-	} else if dir, err := os.Getwd(); err == nil && util.Exists(filepath.Join(dir, ".codegraph")) {
-		RunIndex(InitOptions{Agent: agent}, true)
-	}
+	RunIndex(InitOptions{Agent: agent}, true)
 	path, err := exec.LookPath(argv[0])
 	if err != nil {
 		path = argv[0]

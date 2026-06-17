@@ -146,18 +146,22 @@ func codegraphIndexProject(dir string, opts core.RunOpts) (bool, error) {
 		return false, nil
 	}
 	if opts.DryRun {
-		util.L.Sub("[dry-run] would run: codegraph init -i  (in " + dir + ")")
+		util.L.Sub("[dry-run] would run codegraph in " + dir)
 		return true, nil
 	}
-	ok := util.Exists(filepath.Join(dir, ".codegraph"))
-	if !ok {
-		res := util.Run("codegraph", []string{"init", "-i"}, util.RunOptions{Cwd: dir, Capture: true})
-		if res.Code != 0 {
-			res = util.Run("codegraph", []string{"init"}, util.RunOptions{Cwd: dir, Capture: true})
+	hasIndex := util.Exists(filepath.Join(dir, ".codegraph"))
+	var res util.ExecResult
+	if hasIndex {
+		res = util.Run("codegraph", []string{"sync"}, util.RunOptions{Cwd: dir, Capture: true})
+		if res.Code == 0 {
+			return true, nil
 		}
-		ok = res.Code == 0
 	}
-	return ok, nil
+	res = util.Run("codegraph", []string{"init", "-i"}, util.RunOptions{Cwd: dir, Capture: true})
+	if res.Code != 0 {
+		res = util.Run("codegraph", []string{"init"}, util.RunOptions{Cwd: dir, Capture: true})
+	}
+	return res.Code == 0, nil
 }
 
 func codegraphWire(agent string) core.AgentFn {

@@ -59,12 +59,6 @@ func RunIndex(opts InitOptions, auto bool) int {
 	ro := core.RunOpts{DryRun: opts.DryRun, Agent: opts.Agent}
 	failed := 0
 	for _, t := range indexable {
-		if t.Indexed != nil && t.Indexed(dir, ro) {
-			if !auto {
-				util.L.Raw("  " + util.C.Green("✔ ") + t.Label + util.C.Gray("  already indexed"))
-			}
-			continue
-		}
 		if t.IndexReady != nil && !t.IndexReady() {
 			if !auto {
 				util.L.Raw("  " + util.C.Gray("• ") + t.Label + util.C.Gray("  not installed — run tokless first"))

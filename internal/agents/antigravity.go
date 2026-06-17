@@ -669,32 +669,66 @@ func InstallCodegraphBeforeToolHook() {
 		cfg = util.NewOrderedMap()
 	}
 
+	hooks := getOrCreateMap(cfg, "hooks")
+	btArr := removeCodegraphBeforeToolEntries(getOrCreateArr(hooks, "BeforeTool"))
+
 	hookCfg := util.NewOrderedMap()
 	hookCfg.Set("type", "command")
 	hookCfg.Set("command", command)
-	hookCfg.Set("timeout", 5) // non-blocking now — runs indexing in background
+	hookCfg.Set("timeout", 5)
 
 	entry := util.NewOrderedMap()
 	entry.Set("matcher", ".*")
 	entry.Set("hooks", []interface{}{hookCfg})
 
-	hooks := getOrCreateMap(cfg, "hooks")
-	btArr := getOrCreateArr(hooks, "BeforeTool")
-	if !hookEntryExists(btArr, command) {
-		btArr = append(btArr, entry)
-		hooks.Set("BeforeTool", btArr)
-		_ = util.WriteFile(p, util.StringifyJSON(cfg))
+	btArr = append(btArr, entry)
+	hooks.Set("BeforeTool", btArr)
+	if next := util.StringifyJSON(cfg); next != raw {
+		_ = util.WriteFile(p, next)
 	}
 }
 
-// RemoveCodegraphBeforeToolHook drops our BeforeTool entry from the shared settings.
-func RemoveCodegraphBeforeToolHook() {
-	tok := getToklessAbs()
-	if strings.ContainsAny(tok, " \t") {
-		tok = "tokless"
+// removeCodegraphBeforeToolEntries filters out all codegraph-index entries (any path variant).
+func removeCodegraphBeforeToolEntries(btArr []interface{}) []interface{} {
+	var kept []interface{}
+	for _, e := range btArr {
+		em, ok := e.(*util.OrderedMap)
+		if !ok {
+			kept = append(kept, e)
+			continue
+		}
+		hooksArr, ok := em.Get("hooks")
+		if !ok {
+			kept = append(kept, e)
+			continue
+		}
+		ha, ok := hooksArr.([]interface{})
+		if !ok {
+			kept = append(kept, e)
+			continue
+		}
+		found := false
+		for _, h := range ha {
+			hm, ok := h.(*util.OrderedMap)
+			if ok {
+				if c, ok := hm.Get("command"); ok {
+					if s, ok := c.(string); ok && strings.HasSuffix(s, " agy-hook codegraph-index") {
+						found = true
+						break
+					}
+				}
+			}
+		}
+		if !found {
+			kept = append(kept, e)
+		}
 	}
-	wantCmd := tok + " agy-hook codegraph-index"
+	return kept
+}
 
+// RemoveCodegraphBeforeToolHook drops ALL BeforeTool entries matching tokless codegraph-index
+// (any path variant) from the shared settings.
+func RemoveCodegraphBeforeToolHook() {
 	p := antigravitySettingsPath()
 	raw, ok := util.ReadFileSafe(p)
 	if !ok {
@@ -720,72 +754,18 @@ func RemoveCodegraphBeforeToolHook() {
 	if !ok {
 		return
 	}
-	var kept []interface{}
-	for _, e := range btArr {
-		em, ok := e.(*util.OrderedMap)
-		if !ok {
-			kept = append(kept, e)
-			continue
-		}
-		hooksArr, ok := em.Get("hooks")
-		if !ok {
-			kept = append(kept, e)
-			continue
-		}
-		ha, ok := hooksArr.([]interface{})
-		if !ok {
-			kept = append(kept, e)
-			continue
-		}
-		found := false
-		for _, h := range ha {
-			hm, ok := h.(*util.OrderedMap)
-			if ok {
-				if c, ok := hm.Get("command"); ok {
-					if s, ok := c.(string); ok && s == wantCmd {
-						found = true
-						break
-					}
-				}
-			}
-		}
-		if !found {
-			kept = append(kept, e)
-		}
-	}
+	kept := removeCodegraphBeforeToolEntries(btArr)
 	if len(kept) != len(btArr) {
-		hooks.Set("BeforeTool", kept)
+		if len(kept) == 0 {
+			hooks.Delete("BeforeTool")
+			if hooks.Len() == 0 {
+				cfg.Delete("hooks")
+			}
+		} else {
+			hooks.Set("BeforeTool", kept)
+		}
 		_ = util.WriteFile(p, util.StringifyJSON(cfg))
 	}
-}
-
-// hookEntryExists checks if a BeforeTool entry with the given command already exists.
-func hookEntryExists(btArr []interface{}, command string) bool {
-	for _, e := range btArr {
-		em, ok := e.(*util.OrderedMap)
-		if !ok {
-			continue
-		}
-		hv, ok := em.Get("hooks")
-		if !ok {
-			continue
-		}
-		ha, ok := hv.([]interface{})
-		if !ok {
-			continue
-		}
-		for _, h := range ha {
-			hm, ok := h.(*util.OrderedMap)
-			if ok {
-				if c, ok := hm.Get("command"); ok {
-					if s, ok := c.(string); ok && s == command {
-						return true
-					}
-				}
-			}
-		}
-	}
-	return false
 }
 
 // getOrCreateArr gets or creates an array value in the OrderedMap.
