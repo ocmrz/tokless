@@ -109,9 +109,16 @@ func run() int {
 			return commands.RunRtkHookCodex()
 		}
 	}
-	if len(os.Args) >= 4 && os.Args[1] == "context-mode-hook" && os.Args[2] == "agy" {
-		return commands.RunContextModeHookAgy()
+	if len(os.Args) >= 4 && os.Args[1] == "context-mode-hook" && os.Args[2] == "agy" && os.Args[3] == "preinvocation" {
+		return commands.RunContextModePreInvocationAgy()
 	}
+	if len(os.Args) >= 4 && os.Args[1] == "context-mode-hook" && os.Args[2] == "agy" && os.Args[3] == "pretooluse" {
+		return commands.RunContextModePreToolUseAgy()
+	}
+	if len(os.Args) >= 3 && os.Args[1] == "agy-hook" && os.Args[2] == "codegraph-index" {
+		return commands.RunCodegraphIndexHook()
+	}
+
 
 	p := parseArgs(os.Args[1:])
 	if p.bools["verbose"] {

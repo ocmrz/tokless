@@ -109,10 +109,6 @@ func InstallAntigravityRtkHook() {
 	preToolUseEntry.Set("hooks", []interface{}{hookCfg})
 
 	rtkGroup.Set("PreToolUse", []interface{}{preToolUseEntry})
-	rtkGroup.Set("PostToolUse", nil)
-	rtkGroup.Set("PreInvocation", nil)
-	rtkGroup.Set("PostInvocation", nil)
-	rtkGroup.Set("Stop", nil)
 
 	cfg.Set("rtk", rtkGroup)
 
@@ -121,15 +117,11 @@ func InstallAntigravityRtkHook() {
 	}
 }
 
-// InstallAntigravityContextModeHook installs the PreToolUse hook for context-mode.
-func InstallAntigravityContextModeHook(scriptPath string) {
+// InstallAntigravityContextModeHook installs PreInvocation + PreToolUse hooks.
+func InstallAntigravityContextModeHook() {
 	tok := getToklessAbs()
 	if strings.ContainsAny(tok, " \t") {
 		tok = "tokless"
-	}
-	command := tok + " context-mode-hook agy pretooluse"
-	if scriptPath != "" {
-		command += " --script " + scriptPath
 	}
 
 	hooksFile := antigravityHooksFile()
@@ -144,22 +136,28 @@ func InstallAntigravityContextModeHook(scriptPath string) {
 
 	group := util.NewOrderedMap()
 
-	hookCfg := util.NewOrderedMap()
-	hookCfg.Set("type", "command")
-	hookCfg.Set("command", command)
-	hookCfg.Set("timeout", 10)
+	preInvHook := util.NewOrderedMap()
+	preInvHook.Set("type", "command")
+	preInvHook.Set("command", tok+" context-mode-hook agy preinvocation")
+	preInvHook.Set("timeout", 10)
+	preInvEntry := util.NewOrderedMap()
+	preInvEntry.Set("matcher", "")
+	preInvEntry.Set("hooks", []interface{}{preInvHook})
+	group.Set("PreInvocation", []interface{}{preInvEntry})
 
+	preToolHook := util.NewOrderedMap()
+	preToolHook.Set("type", "command")
+	preToolHook.Set("command", tok+" context-mode-hook agy pretooluse")
+	preToolHook.Set("timeout", 10)
 	preToolUseEntry := util.NewOrderedMap()
-	preToolUseEntry.Set("matcher", "run_command|view_file|read_file|edit_file|replace_file_content|write_file|glob|search_file_content|grep_search|web_fetch|mcp__")
-	preToolUseEntry.Set("hooks", []interface{}{hookCfg})
-
+	preToolUseEntry.Set("matcher", "read_url_content|web_fetch|run_command|run_shell_command")
+	preToolUseEntry.Set("hooks", []interface{}{preToolHook})
 	group.Set("PreToolUse", []interface{}{preToolUseEntry})
-	group.Set("PostToolUse", nil)
-	group.Set("PreInvocation", nil)
-	group.Set("PostInvocation", nil)
-	group.Set("Stop", nil)
 
-	cfg.Set("tokless-context-mode", group)
+	if _, ok := cfg.Get("tokless-context-mode"); ok {
+		cfg.Delete("tokless-context-mode")
+	}
+	cfg.Set("ctx", group)
 
 	if next := util.StringifyJSON(cfg); next != raw {
 		_ = util.WriteFile(hooksFile, next)
@@ -195,6 +193,10 @@ func RemoveAntigravityContextModeHook() {
 	cfg := util.TryParseJsonc(raw)
 	if cfg == nil {
 		return
+	}
+	if _, ok := cfg.Get("ctx"); ok {
+		cfg.Delete("ctx")
+		_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
 	}
 	if _, ok := cfg.Get("tokless-context-mode"); ok {
 		cfg.Delete("tokless-context-mode")
@@ -265,7 +267,7 @@ func HasAntigravityContextModeHook() bool {
 	if cfg == nil {
 		return false
 	}
-	groupObj, ok := cfg.Get("tokless-context-mode")
+	groupObj, ok := cfg.Get("ctx")
 	if !ok {
 		return false
 	}
@@ -273,7 +275,7 @@ func HasAntigravityContextModeHook() bool {
 	if !ok {
 		return false
 	}
-	pre, ok := group.Get("PreToolUse")
+	pre, ok := group.Get("PreInvocation")
 	if !ok {
 		return false
 	}
@@ -305,11 +307,138 @@ func HasAntigravityContextModeHook() bool {
 	if !ok {
 		return false
 	}
-	return strings.Contains(cmdStr, "context-mode-hook agy")
+	return strings.Contains(cmdStr, "context-mode-hook agy preinvocation")
 }
 
-// allowAntigravityEntry adds a permissions.allow rule so agy auto-approves it.
-func allowAntigravityEntry(entry string) {
+// InstallAntigravityCodegraphIndexHook installs a PreInvocation hook that
+// runs `tokless index --auto` to initialize .codegraph when missing.
+func InstallAntigravityCodegraphIndexHook() {
+	tok := getToklessAbs()
+	if strings.ContainsAny(tok, " \t") {
+		tok = "tokless"
+	}
+	command := tok + " agy-hook codegraph-index"
+
+	hooksFile := antigravityHooksFile()
+	raw, ok := util.ReadFileSafe(hooksFile)
+	var cfg *util.OrderedMap
+	if ok {
+		cfg = util.TryParseJsonc(raw)
+	}
+	if cfg == nil {
+		cfg = util.NewOrderedMap()
+	}
+
+	group := util.NewOrderedMap()
+
+	hookCfg := util.NewOrderedMap()
+	hookCfg.Set("type", "command")
+	hookCfg.Set("command", command)
+	hookCfg.Set("timeout", 30)
+
+	preInvocationEntry := util.NewOrderedMap()
+	preInvocationEntry.Set("matcher", "")
+	preInvocationEntry.Set("hooks", []interface{}{hookCfg})
+
+	group.Set("PreInvocation", []interface{}{preInvocationEntry})
+
+	cfg.Set("tokless-codegraph-index", group)
+
+	if next := util.StringifyJSON(cfg); next != raw {
+		_ = util.WriteFile(hooksFile, next)
+	}
+}
+
+// RemoveAntigravityCodegraphIndexHook removes the codegraph index hook for agy.
+func RemoveAntigravityCodegraphIndexHook() {
+	hooksFile := antigravityHooksFile()
+	raw, ok := util.ReadFileSafe(hooksFile)
+	if !ok {
+		return
+	}
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return
+	}
+	if _, ok := cfg.Get("tokless-codegraph-index"); ok {
+		cfg.Delete("tokless-codegraph-index")
+		_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
+	}
+}
+
+// HasAntigravityCodegraphIndexHook reports whether the codegraph index hook is installed.
+func HasAntigravityCodegraphIndexHook() bool {
+	raw, ok := util.ReadFileSafe(antigravityHooksFile())
+	if !ok {
+		return false
+	}
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return false
+	}
+	groupObj, ok := cfg.Get("tokless-codegraph-index")
+	if !ok {
+		return false
+	}
+	group, ok := groupObj.(*util.OrderedMap)
+	if !ok {
+		return false
+	}
+	pre, ok := group.Get("PreInvocation")
+	if !ok {
+		return false
+	}
+	preArr, ok := pre.([]interface{})
+	if !ok || len(preArr) == 0 {
+		return false
+	}
+	entry, ok := preArr[0].(*util.OrderedMap)
+	if !ok {
+		return false
+	}
+	hooksObj, ok := entry.Get("hooks")
+	if !ok {
+		return false
+	}
+	hooksArr, ok := hooksObj.([]interface{})
+	if !ok || len(hooksArr) == 0 {
+		return false
+	}
+	hook, ok := hooksArr[0].(*util.OrderedMap)
+	if !ok {
+		return false
+	}
+	cmd, ok := hook.Get("command")
+	if !ok {
+		return false
+	}
+	cmdStr, ok := cmd.(string)
+	if !ok {
+		return false
+	}
+	return strings.Contains(cmdStr, "agy-hook codegraph-index")
+}
+
+// SetAntigravityCompactToolOutput sets ui.compactToolOutput in agy settings.json.
+// false = full tool output (not collapsed). MCP tool calls show the full command.
+func SetAntigravityCompactToolOutput(enabled bool) {
+	for _, f := range antigravitySettingsFiles() {
+		_ = util.EnsureDir(filepath.Dir(f))
+		raw, _ := util.ReadFileSafe(f)
+		cfg := util.TryParseJsonc(raw)
+		if cfg == nil {
+			cfg = util.NewOrderedMap()
+		}
+		ui := getOrCreateMap(cfg, "ui")
+		ui.Set("compactToolOutput", enabled)
+		if next := util.StringifyJSON(cfg); next != raw {
+			_ = util.WriteFile(f, next)
+		}
+	}
+}
+
+// AllowAntigravityEntry adds a permissions.allow rule so agy auto-approves it.
+func AllowAntigravityEntry(entry string) {
 	for _, f := range antigravitySettingsFiles() {
 		_ = util.EnsureDir(filepath.Dir(f))
 		raw, _ := util.ReadFileSafe(f)
@@ -341,8 +470,8 @@ func allowAntigravityEntry(entry string) {
 	}
 }
 
-// removeAntigravityEntry drops a permissions.allow rule.
-func removeAntigravityEntry(entry string) {
+// RemoveAntigravityEntry drops a permissions.allow rule.
+func RemoveAntigravityEntry(entry string) {
 	want := entry
 	for _, f := range antigravitySettingsFiles() {
 		raw, ok := util.ReadFileSafe(f)
@@ -393,8 +522,8 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 	} else {
 		spawn = util.PickMcpSpawn(toolID)
 	}
-	allowAntigravityEntry("mcp(" + toolID + "/*)")
-	allowAntigravityEntry("command(rtk)")
+	AllowAntigravityEntry("mcp(" + toolID + "/*)")
+	AllowAntigravityEntry("command(rtk)")
 	for _, f := range antigravityMcpFiles() {
 		_ = util.EnsureDir(filepath.Dir(f))
 		raw, _ := util.ReadFileSafe(f)
@@ -416,8 +545,8 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 			file = f
 		}
 	}
-	allowAntigravityEntry("mcp(" + toolID + "/*)")
-	allowAntigravityEntry("command(rtk)")
+	AllowAntigravityEntry("mcp(" + toolID + "/*)")
+	AllowAntigravityEntry("command(rtk)")
 	return changed, file
 }
 
@@ -505,5 +634,5 @@ func RemoveAntigravityMcp(toolID string) {
 			}
 		}
 	}
-	removeAntigravityEntry("mcp(" + toolID + "/*)")
+	RemoveAntigravityEntry("mcp(" + toolID + "/*)")
 }
