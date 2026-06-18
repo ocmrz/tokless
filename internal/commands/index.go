@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +24,21 @@ func looksLikeProject(dir string) bool {
 	return false
 }
 
+// findProjectDir walks up from dir looking for project markers.
+func findProjectDir(dir string) string {
+	for {
+		if looksLikeProject(dir) {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir || parent == "." {
+			break
+		}
+		dir = parent
+	}
+	return dir
+}
+
 func RunIndex(opts InitOptions, auto bool) int {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -31,8 +48,11 @@ func RunIndex(opts InitOptions, auto bool) int {
 		return 1
 	}
 
-	if auto && !looksLikeProject(dir) {
-		return 0
+	if auto {
+		dir = findProjectDir(dir)
+		if !looksLikeProject(dir) {
+			return 0
+		}
 	}
 
 	var indexable []*core.ToolManifest
@@ -99,50 +119,73 @@ func RunIndex(opts InitOptions, auto bool) int {
 	return 0
 }
 
-// RunCodegraphIndexHook handles `tokless agy-hook codegraph-index [--sync]`.
+// RunCodegraphIndexHook handles `tokless agy-hook codegraph-index`.
 func RunCodegraphIndexHook() int {
-	dir, err := os.Getwd()
-	if err != nil {
+	input, _ := io.ReadAll(os.Stdin)
+	dir := resolveHookProjectDirFromInput(input)
+	if dir == "" {
 		return 0
 	}
 	if util.Exists(filepath.Join(dir, ".codegraph")) {
-		return 0
-	}
-	bin := util.Which("codegraph")
-	if bin == "" {
-		if matches, _ := filepath.Glob(filepath.Join(util.Home(), ".nvm", "versions", "node", "*", "bin")); len(matches) > 0 {
-			for _, d := range matches {
-				util.PrependProcessPath(d)
-			}
+		if bin := resolveCodegraphBin(); bin != "" {
+			cmd := exec.Command(bin, "sync")
+			cmd.Dir = dir
+			_ = cmd.Run()
 		}
-		bin = util.Which("codegraph")
-	}
-	if bin == "" {
 		return 0
 	}
-	if len(os.Args) > 3 && os.Args[3] == "--sync" {
+	if bin := resolveCodegraphBin(); bin == "" {
+		return 0
+	} else {
 		cmd := exec.Command(bin, "init", "-i")
 		cmd.Dir = dir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
 		_ = cmd.Run()
-		return 0
 	}
-	cmd := exec.Command(bin, "init", "-i")
-	cmd.Dir = dir
-	backgroundSpawn(cmd)
 	return 0
 }
 
-// RunContextModeWarmup starts the context-mode MCP server if not already running.
+func resolveHookProjectDirFromInput(input []byte) string {
+	if len(input) > 0 {
+		var req struct {
+			WorkspacePaths []string `json:"workspacePaths"`
+		}
+		if json.Unmarshal(input, &req) == nil && len(req.WorkspacePaths) > 0 {
+			return req.WorkspacePaths[0]
+		}
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return findProjectDir(dir)
+}
+
+func resolveCodegraphBin() string {
+	if p := util.Which("codegraph"); p != "" {
+		res := util.Run("codegraph", []string{"--version"}, util.RunOptions{Capture: true})
+		if res.Code == 0 && strings.Contains(res.Stdout, ".") {
+			return p
+		}
+	}
+	if matches, _ := filepath.Glob(filepath.Join(util.Home(), ".nvm", "versions", "node", "*", "bin")); len(matches) > 0 {
+		sep := ":"
+		if util.IsWin {
+			sep = ";"
+		}
+		cur := os.Getenv("PATH")
+		prefix := strings.Join(matches, sep)
+		os.Setenv("PATH", prefix+sep+cur)
+	}
+	return util.Which("codegraph")
+}
 func RunContextModeWarmup() int {
 	if contextModeSentinelAlive() {
 		return 0
 	}
-		spawn := util.PickMcpSpawn("context-mode", "serve", "--mcp")
-		cmd := exec.Command(spawn.Command, spawn.Args...)
-		backgroundSpawn(cmd)
-		return 0
+	spawn := util.PickMcpSpawn("context-mode", "serve", "--mcp")
+	cmd := exec.Command(spawn.Command, spawn.Args...)
+	backgroundSpawn(cmd)
+	return 0
 }
 
 func contextModeSentinelAlive() bool {

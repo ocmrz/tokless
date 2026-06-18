@@ -177,31 +177,28 @@ func TestInitSandboxWiring(t *testing.T) {
 		t.Errorf("claude settings.json doesn't auto-approve codegraph MCP, got: %s", string(claudeSettings))
 	}
 
-	// 6. Antigravity: context-mode PreInvocation injects routing + PreToolUse redirects raw tools.
+	// 6. Antigravity: official context-mode PreToolUse hook + GEMINI.md routing instructions.
 	hooksContent, _ := os.ReadFile(filepath.Join(tempdir, ".gemini", "config", "hooks.json"))
 	if !strings.Contains(string(hooksContent), "rtk-hook agy") {
 		t.Errorf("antigravity hooks.json does not invoke `rtk-hook agy`, got: %s", string(hooksContent))
 	}
-	if !strings.Contains(string(hooksContent), "context-mode-hook agy preinvocation") {
-		t.Errorf("antigravity hooks.json does not invoke `context-mode-hook agy preinvocation`, got: %s", string(hooksContent))
+	if !strings.Contains(string(hooksContent), "context-mode hook gemini") {
+		t.Errorf("antigravity hooks.json missing official context-mode PreToolUse hook, got: %s", string(hooksContent))
 	}
-	if !strings.Contains(string(hooksContent), "context-mode-hook agy pretooluse") {
-		t.Errorf("antigravity hooks.json does not invoke `context-mode-hook agy pretooluse`, got: %s", string(hooksContent))
+	if !strings.Contains(string(hooksContent), `"ctx":`) {
+		t.Errorf("antigravity hooks.json missing ctx group, got: %s", string(hooksContent))
 	}
-	if !strings.Contains(string(hooksContent), `"ctx": {`) {
-		t.Errorf("antigravity hooks.json missing `ctx` group, got: %s", string(hooksContent))
-	}
-	if !strings.Contains(string(hooksContent), "PreInvocation") && strings.Contains(string(hooksContent), "ctx") {
-		t.Errorf("antigravity hooks.json missing PreInvocation in ctx group")
-	}
-	if !strings.Contains(string(hooksContent), "PreToolUse") && strings.Contains(string(hooksContent), "ctx") {
+	if !strings.Contains(string(hooksContent), "PreToolUse") {
 		t.Errorf("antigravity hooks.json missing PreToolUse in ctx group")
 	}
 	if !strings.Contains(string(hooksContent), "tokless-codegraph-index") {
-		t.Errorf("antigravity hooks.json missing `tokless-codegraph-index` group (auto-index), got: %s", string(hooksContent))
+		t.Errorf("antigravity hooks.json missing codegraph-index hook group, got: %s", string(hooksContent))
 	}
 	if !strings.Contains(string(hooksContent), "agy-hook codegraph-index") {
-		t.Errorf("antigravity hooks.json missing `agy-hook codegraph-index` command, got: %s", string(hooksContent))
+		t.Errorf("antigravity hooks.json missing agy-hook codegraph-index command, got: %s", string(hooksContent))
+	}
+	if !strings.Contains(string(hooksContent), "PostToolUse") {
+		t.Errorf("antigravity hooks.json missing PostToolUse (IDE session-start event), got: %s", string(hooksContent))
 	}
 	if !util.Exists(filepath.Join(tempdir, ".gemini", "config", "tokless", "context-mode-routing.md")) {
 		t.Errorf("antigravity context-mode routing file not installed at ~/.gemini/config/tokless/")

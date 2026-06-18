@@ -26,17 +26,18 @@ func antigravitySettingsFiles() []string {
 	gemini := filepath.Join(util.Home(), ".gemini")
 	return []string{
 		filepath.Join(gemini, "antigravity-cli", "settings.json"),
+		filepath.Join(gemini, "antigravity-ide", "settings.json"),
 	}
 }
 
 func antigravityDeadGuiSettingsFiles() []string {
 	gemini := filepath.Join(util.Home(), ".gemini")
 	return []string{
-		filepath.Join(gemini, "antigravity-ide", "settings.json"),
 		filepath.Join(gemini, "antigravity-desktop", "settings.json"),
 	}
 }
 
+// cleanAntigravityDeadGuiSettings removes permissions from desktop settings
 func cleanAntigravityDeadGuiSettings() {
 	for _, f := range antigravityDeadGuiSettingsFiles() {
 		raw, ok := util.ReadFileSafe(f)
@@ -136,6 +137,7 @@ func InstallAntigravityContextModeHook() {
 
 	group := util.NewOrderedMap()
 
+	// PreInvocation: inject routing instructions at first prompt.
 	preInvHook := util.NewOrderedMap()
 	preInvHook.Set("type", "command")
 	preInvHook.Set("command", tok+" context-mode-hook agy preinvocation")
@@ -145,12 +147,13 @@ func InstallAntigravityContextModeHook() {
 	preInvEntry.Set("hooks", []interface{}{preInvHook})
 	group.Set("PreInvocation", []interface{}{preInvEntry})
 
+	// PreToolUse: redirect raw tools to context-mode equivalents.
 	preToolHook := util.NewOrderedMap()
 	preToolHook.Set("type", "command")
-	preToolHook.Set("command", tok+" context-mode-hook agy pretooluse")
+	preToolHook.Set("command", "context-mode hook gemini-cli beforetool")
 	preToolHook.Set("timeout", 10)
 	preToolUseEntry := util.NewOrderedMap()
-	preToolUseEntry.Set("matcher", "read_url_content|web_fetch|run_command|run_shell_command")
+	preToolUseEntry.Set("matcher", "read_url_content|run_command|view_file")
 	preToolUseEntry.Set("hooks", []interface{}{preToolHook})
 	group.Set("PreToolUse", []interface{}{preToolUseEntry})
 
@@ -275,7 +278,7 @@ func HasAntigravityContextModeHook() bool {
 	if !ok {
 		return false
 	}
-	pre, ok := group.Get("PreInvocation")
+	pre, ok := group.Get("PreToolUse")
 	if !ok {
 		return false
 	}
@@ -307,46 +310,7 @@ func HasAntigravityContextModeHook() bool {
 	if !ok {
 		return false
 	}
-	return strings.Contains(cmdStr, "context-mode-hook agy preinvocation")
-}
-
-// InstallAntigravityCodegraphIndexHook installs a PreInvocation hook that
-// runs `tokless agy-hook codegraph-index --sync` to initialize .codegraph before the agent starts.
-func InstallAntigravityCodegraphIndexHook() {
-	tok := getToklessAbs()
-	if strings.ContainsAny(tok, " \t") {
-		tok = "tokless"
-	}
-	command := tok + " agy-hook codegraph-index --sync"
-
-	hooksFile := antigravityHooksFile()
-	raw, ok := util.ReadFileSafe(hooksFile)
-	var cfg *util.OrderedMap
-	if ok {
-		cfg = util.TryParseJsonc(raw)
-	}
-	if cfg == nil {
-		cfg = util.NewOrderedMap()
-	}
-
-	group := util.NewOrderedMap()
-
-	hookCfg := util.NewOrderedMap()
-	hookCfg.Set("type", "command")
-	hookCfg.Set("command", command)
-	hookCfg.Set("timeout", 120)
-
-	preInvocationEntry := util.NewOrderedMap()
-	preInvocationEntry.Set("matcher", "")
-	preInvocationEntry.Set("hooks", []interface{}{hookCfg})
-
-	group.Set("PreInvocation", []interface{}{preInvocationEntry})
-
-	cfg.Set("tokless-codegraph-index", group)
-
-	if next := util.StringifyJSON(cfg); next != raw {
-		_ = util.WriteFile(hooksFile, next)
-	}
+	return strings.Contains(cmdStr, "context-mode hook gemini")
 }
 
 // InstallAntigravityCodegraphToolDefs writes static codegraph MCP tool definitions
@@ -393,23 +357,6 @@ func RemoveAntigravityCodegraphToolDefs() {
 	}
 }
 
-// RemoveAntigravityCodegraphIndexHook removes the codegraph index hook for agy.
-func RemoveAntigravityCodegraphIndexHook() {
-	hooksFile := antigravityHooksFile()
-	raw, ok := util.ReadFileSafe(hooksFile)
-	if !ok {
-		return
-	}
-	cfg := util.TryParseJsonc(raw)
-	if cfg == nil {
-		return
-	}
-	if _, ok := cfg.Get("tokless-codegraph-index"); ok {
-		cfg.Delete("tokless-codegraph-index")
-		_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
-	}
-}
-
 // HasAntigravityCodegraphIndexHook reports whether the codegraph index hook is installed.
 func HasAntigravityCodegraphIndexHook() bool {
 	raw, ok := util.ReadFileSafe(antigravityHooksFile())
@@ -428,15 +375,24 @@ func HasAntigravityCodegraphIndexHook() bool {
 	if !ok {
 		return false
 	}
-	pre, ok := group.Get("PreInvocation")
+	for _, ev := range []string{"PostToolUse", "PreInvocation"} {
+		if hasCodegraphIndexEntry(group, ev) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasCodegraphIndexEntry(group *util.OrderedMap, event string) bool {
+	v, ok := group.Get(event)
 	if !ok {
 		return false
 	}
-	preArr, ok := pre.([]interface{})
-	if !ok || len(preArr) == 0 {
+	arr, ok := v.([]interface{})
+	if !ok || len(arr) == 0 {
 		return false
 	}
-	entry, ok := preArr[0].(*util.OrderedMap)
+	entry, ok := arr[0].(*util.OrderedMap)
 	if !ok {
 		return false
 	}
@@ -461,6 +417,67 @@ func HasAntigravityCodegraphIndexHook() bool {
 		return false
 	}
 	return strings.Contains(cmdStr, "agy-hook codegraph-index")
+}
+
+// RemoveAntigravityCodegraphIndexHook removes the codegraph index hook group from hooks.json.
+func RemoveAntigravityCodegraphIndexHook() {
+	hooksFile := antigravityHooksFile()
+	raw, ok := util.ReadFileSafe(hooksFile)
+	if !ok {
+		return
+	}
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return
+	}
+	if _, ok := cfg.Get("tokless-codegraph-index"); ok {
+		cfg.Delete("tokless-codegraph-index")
+		_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
+	}
+}
+
+// InstallAntigravityCodegraphIndexHook installs hooks for codegraph auto-init.
+func InstallAntigravityCodegraphIndexHook() {
+	tok := getToklessAbs()
+	if strings.ContainsAny(tok, " \t") {
+		tok = "tokless"
+	}
+	command := tok + " agy-hook codegraph-index"
+
+	hooksFile := antigravityHooksFile()
+	raw, ok := util.ReadFileSafe(hooksFile)
+	var cfg *util.OrderedMap
+	if ok {
+		cfg = util.TryParseJsonc(raw)
+	}
+	if cfg == nil {
+		cfg = util.NewOrderedMap()
+	}
+
+	group := util.NewOrderedMap()
+
+	hookCfg := util.NewOrderedMap()
+	hookCfg.Set("type", "command")
+	hookCfg.Set("command", command)
+	hookCfg.Set("timeout", 120)
+
+	// PostToolUse: fires in IDE (toolCall=null startup) + CLI (every tool call).
+	postToolEntry := util.NewOrderedMap()
+	postToolEntry.Set("matcher", "")
+	postToolEntry.Set("hooks", []interface{}{hookCfg})
+	group.Set("PostToolUse", []interface{}{postToolEntry})
+
+	// PreInvocation: fires in agy CLI at first prompt. IDE does not fire it.
+	preInvEntry := util.NewOrderedMap()
+	preInvEntry.Set("matcher", "")
+	preInvEntry.Set("hooks", []interface{}{hookCfg})
+	group.Set("PreInvocation", []interface{}{preInvEntry})
+
+	cfg.Set("tokless-codegraph-index", group)
+
+	if next := util.StringifyJSON(cfg); next != raw {
+		_ = util.WriteFile(hooksFile, next)
+	}
 }
 
 // SetAntigravityCompactToolOutput sets ui.compactToolOutput in agy settings.json.
@@ -647,135 +664,102 @@ func antigravityDesktopPaths() []string {
 	}
 }
 
-var antigravitySettingsPath = func() string {
-	return filepath.Join(util.Home(), ".gemini", "settings.json")
+// CleanupDeadIdeHooks removes stale codegraph-index hooks from flat settings.json files
+// and the grouped hooks.json.
+func CleanupDeadIdeHooks() {
+	gemini := filepath.Join(util.Home(), ".gemini")
+	for _, p := range []string{
+		filepath.Join(gemini, "settings.json"),
+		filepath.Join(gemini, "antigravity", "settings.json"),
+		filepath.Join(gemini, "antigravity-ide", "settings.json"),
+		filepath.Join(gemini, "antigravity-cli", "settings.json"),
+	} {
+		raw, ok := util.ReadFileSafe(p)
+		if !ok {
+			continue
+		}
+		cfg := util.TryParseJsonc(raw)
+		if cfg == nil {
+			continue
+		}
+		hv, ok := cfg.Get("hooks")
+		if !ok {
+			continue
+		}
+		hooks, ok := hv.(*util.OrderedMap)
+		if !ok {
+			continue
+		}
+		changed := false
+		for _, event := range append([]string(nil), hooks.Keys()...) {
+			arr, ok := hooks.Get(event)
+			if !ok {
+				continue
+			}
+			entries, ok := arr.([]interface{})
+			if !ok {
+				continue
+			}
+			kept := filterCodegraphIndexEntries(entries)
+			if len(kept) != len(entries) {
+				changed = true
+				if len(kept) == 0 {
+					hooks.Delete(event)
+				} else {
+					hooks.Set(event, kept)
+				}
+			}
+		}
+		if !changed {
+			continue
+		}
+		if hooks.Len() == 0 {
+			cfg.Delete("hooks")
+		}
+		if next := util.StringifyJSON(cfg); next != raw {
+			_ = util.WriteFile(p, next)
+		}
+	}
 }
 
-// InstallCodegraphBeforeToolHook adds a BeforeTool hook to ~/.gemini/settings.json.
-func InstallCodegraphBeforeToolHook() {
-	tok := getToklessAbs()
-	if strings.ContainsAny(tok, " \t") {
-		tok = "tokless"
-	}
-	command := tok + " agy-hook codegraph-index"
-
-	p := antigravitySettingsPath()
-	raw, ok := util.ReadFileSafe(p)
-	var cfg *util.OrderedMap
-	if ok {
-		cfg = util.TryParseJsonc(raw)
-	}
-	if cfg == nil {
-		cfg = util.NewOrderedMap()
-	}
-
-	hooks := getOrCreateMap(cfg, "hooks")
-	btArr := removeCodegraphBeforeToolEntries(getOrCreateArr(hooks, "BeforeTool"))
-
-	hookCfg := util.NewOrderedMap()
-	hookCfg.Set("type", "command")
-	hookCfg.Set("command", command)
-	hookCfg.Set("timeout", 5)
-
-	entry := util.NewOrderedMap()
-	entry.Set("matcher", ".*")
-	entry.Set("hooks", []interface{}{hookCfg})
-
-	btArr = append(btArr, entry)
-	hooks.Set("BeforeTool", btArr)
-	if next := util.StringifyJSON(cfg); next != raw {
-		_ = util.WriteFile(p, next)
-	}
-}
-
-// removeCodegraphBeforeToolEntries filters out all codegraph-index entries (any path variant).
-func removeCodegraphBeforeToolEntries(btArr []interface{}) []interface{} {
+func filterCodegraphIndexEntries(arr []interface{}) []interface{} {
 	var kept []interface{}
-	for _, e := range btArr {
+	for _, e := range arr {
 		em, ok := e.(*util.OrderedMap)
 		if !ok {
 			kept = append(kept, e)
 			continue
 		}
-		hooksArr, ok := em.Get("hooks")
+		hv, ok := em.Get("hooks")
 		if !ok {
 			kept = append(kept, e)
 			continue
 		}
-		ha, ok := hooksArr.([]interface{})
+		ha, ok := hv.([]interface{})
 		if !ok {
 			kept = append(kept, e)
 			continue
 		}
-		found := false
+		drop := false
 		for _, h := range ha {
 			hm, ok := h.(*util.OrderedMap)
-			if ok {
-				if c, ok := hm.Get("command"); ok {
-					if s, ok := c.(string); ok && strings.HasSuffix(s, " agy-hook codegraph-index") {
-						found = true
+			if !ok {
+				continue
+			}
+			if c, ok := hm.Get("command"); ok {
+				if s, ok := c.(string); ok {
+					if strings.Contains(s, "agy-hook codegraph-index") || strings.Contains(s, "context-mode hook gemini-cli") {
+						drop = true
 						break
 					}
 				}
 			}
 		}
-		if !found {
+		if !drop {
 			kept = append(kept, e)
 		}
 	}
 	return kept
-}
-
-// RemoveCodegraphBeforeToolHook drops ALL BeforeTool entries matching tokless codegraph-index
-// (any path variant) from the shared settings.
-func RemoveCodegraphBeforeToolHook() {
-	p := antigravitySettingsPath()
-	raw, ok := util.ReadFileSafe(p)
-	if !ok {
-		return
-	}
-	cfg := util.TryParseJsonc(raw)
-	if cfg == nil {
-		return
-	}
-	hv, ok := cfg.Get("hooks")
-	if !ok {
-		return
-	}
-	hooks, ok := hv.(*util.OrderedMap)
-	if !ok {
-		return
-	}
-	v, ok := hooks.Get("BeforeTool")
-	if !ok {
-		return
-	}
-	btArr, ok := v.([]interface{})
-	if !ok {
-		return
-	}
-	kept := removeCodegraphBeforeToolEntries(btArr)
-	if len(kept) != len(btArr) {
-		if len(kept) == 0 {
-			hooks.Delete("BeforeTool")
-			if hooks.Len() == 0 {
-				cfg.Delete("hooks")
-			}
-		} else {
-			hooks.Set("BeforeTool", kept)
-		}
-		_ = util.WriteFile(p, util.StringifyJSON(cfg))
-	}
-}
-
-// getOrCreateArr gets or creates an array value in the OrderedMap.
-func getOrCreateArr(m *util.OrderedMap, key string) []interface{} {
-	if v, ok := m.Get(key); ok {
-		if arr, ok := v.([]interface{}); ok {
-			return arr
-		}
-	}
-	return []interface{}{}
 }
 
 var antigravity = &core.AgentManifest{

@@ -128,7 +128,8 @@ func codegraphVerify(agent string) bool {
 		raw, _ := util.ReadFileSafe(cx.Config)
 		return strings.Contains(raw, "[mcp_servers.codegraph]")
 	case "antigravity":
-			return agents.AntigravityMcpHas("codegraph") && agents.HasAntigravityCodegraphIndexHook()
+		agents.CleanupDeadIdeHooks()
+		return agents.AntigravityMcpHas("codegraph") && agents.HasAntigravityCodegraphIndexHook()
 	}
 	return false
 }
@@ -167,11 +168,12 @@ func codegraphIndexProject(dir string, opts core.RunOpts) (bool, error) {
 func codegraphWire(agent string) core.AgentFn {
 	return func(opts core.RunOpts) (bool, error) {
 		if isTest() {
-			ok := codegraphConfigureMcp(agent)
+			codegraphConfigureMcp(agent)
 			if agent == "antigravity" {
 				agents.InstallAntigravityCodegraphIndexHook()
+				agents.CleanupDeadIdeHooks()
 			}
-			return ok, nil
+			return codegraphVerify(agent), nil
 		}
 		if opts.DryRun {
 			return codegraphRealInstall(opts), nil
@@ -183,7 +185,7 @@ func codegraphWire(agent string) core.AgentFn {
 		unwireAutoIndex(agent)
 		if agent == "antigravity" {
 			agents.InstallAntigravityCodegraphIndexHook()
-			agents.InstallCodegraphBeforeToolHook()
+			agents.CleanupDeadIdeHooks()
 		}
 		return codegraphVerify(agent), nil
 	}
@@ -245,8 +247,7 @@ var codegraph = &core.ToolManifest{
 		"antigravity": func(core.RunOpts) (bool, error) {
 			agents.RemoveAntigravityMcp("codegraph")
 			unwireAutoIndex("antigravity")
-			agents.RemoveAntigravityCodegraphIndexHook()
-			agents.RemoveCodegraphBeforeToolHook()
+			agents.CleanupDeadIdeHooks()
 			agents.RemoveAntigravityCodegraphToolDefs()
 			return true, nil
 		},
