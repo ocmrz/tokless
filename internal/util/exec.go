@@ -135,3 +135,45 @@ func WhichAny(bins []string) (string, string) {
 	}
 	return "", ""
 }
+
+// RtkInstallDirs returns well-known rtk install locations.
+func RtkInstallDirs() []string {
+	if IsWin {
+		if local := os.Getenv("LOCALAPPDATA"); local != "" {
+			return []string{filepath.Join(local, "rtk", "bin")}
+		}
+		return nil
+	}
+	return []string{filepath.Join(Home(), ".local", "bin")}
+}
+
+// BinaryHealthy probes --version for a dot — rejects shims and 0-byte files.
+func BinaryHealthy(p string) bool {
+	r := Run(p, []string{"--version"}, RunOptions{Capture: true})
+	return r.Code == 0 && strings.Contains(r.Stdout, ".")
+}
+
+// ResolveRtkBin finds a working rtk binary, surviving PATH drift.
+func ResolveRtkBin() string {
+	if p := Which("rtk"); p != "" {
+		if BinaryHealthy(p) {
+			return p
+		}
+	}
+	sep := ":"
+	if IsWin {
+		sep = ";"
+	}
+	cur := os.Getenv("PATH")
+	prefix := ""
+	for _, d := range RtkInstallDirs() {
+		if d == "" {
+			continue
+		}
+		prefix += d + sep
+	}
+	if prefix != "" {
+		os.Setenv("PATH", prefix+cur)
+	}
+	return Which("rtk")
+}

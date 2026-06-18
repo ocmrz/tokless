@@ -10,25 +10,50 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"github.com/HoangP8/tokless/internal/util"
 )
 
 func rtkRewrite(cmdLine string) (string, bool) {
 	if cmdLine == "" {
 		return "", false
 	}
+	rtkPath := util.ResolveRtkBin()
+	if rtkPath == "" {
+		fmt.Fprintln(os.Stderr, "[rtk] binary not found — command unchanged")
+		return "", false
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "rtk", "rewrite", cmdLine)
+	cmd := exec.CommandContext(ctx, rtkPath, "rewrite", cmdLine)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
-	_ = cmd.Run()
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "[rtk] rewrite failed: "+err.Error())
+		return "", false
+	}
 
 	newCmd := strings.TrimSpace(stdout.String())
 	if newCmd == "" || strings.HasPrefix(newCmd, "No rewrite") || newCmd == cmdLine {
 		return "", false
 	}
+	if isShimOutput(newCmd) {
+		fmt.Fprintln(os.Stderr, "[rtk] rewrite produced shim-like output, rejecting: "+newCmd)
+		return "", false
+	}
 	return newCmd, true
+}
+
+// isShimOutput rejects bare-token output (e.g. "ok" from a broken shim).
+func isShimOutput(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return true
+	}
+	if !strings.Contains(s, " ") && !strings.ContainsAny(s, "|&;<>(){}$\\\"'") {
+		return true
+	}
+	return false
 }
 
 // RunRtkHook handles the transparent command rewriting for Antigravity's PreToolUse hook.

@@ -152,10 +152,11 @@ func githubLatestRelease(repo string) *string {
 var reSemver = regexp.MustCompile(`(\d+\.\d+\.\d+)`)
 
 func rtkInstalledVersion() *string {
-	if Which("rtk") == "" {
+	p := ResolveRtkBin()
+	if p == "" {
 		return nil
 	}
-	r := Run("rtk", []string{"--version"}, RunOptions{Capture: true})
+	r := Run(p, []string{"--version"}, RunOptions{Capture: true})
 	src := r.Stdout
 	if src == "" {
 		src = r.Stderr

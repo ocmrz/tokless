@@ -33,23 +33,25 @@ func rtkAssetForThisPlatform() string {
 
 func rtkEnsureInstalled(opts core.RunOpts) (bool, error) {
 	if os.Getenv("TOKLESS_TEST") == "1" {
-		dest := filepath.Join(util.Home(), ".local", "bin")
-		_ = os.MkdirAll(dest, 0o755)
-		rtkPath := filepath.Join(dest, "rtk")
-		_ = os.Remove(rtkPath)
-		_ = os.WriteFile(rtkPath, []byte("#!/bin/sh\necho ok"), 0o755)
+		shimDir := filepath.Join(os.TempDir(), "tokless-test-rtk")
+		_ = os.MkdirAll(shimDir, 0o755)
+		shimPath := filepath.Join(shimDir, "rtk")
+		_ = os.Remove(shimPath)
+		if util.IsWin {
+			_ = os.WriteFile(shimPath+".bat", []byte("@echo ok"), 0o755)
+		} else {
+			_ = os.WriteFile(shimPath, []byte("#!/bin/sh\necho ok"), 0o755)
+		}
 		sep := ":"
 		if util.IsWin {
 			sep = ";"
 		}
 		cur := os.Getenv("PATH")
-		if !strings.Contains(sep+cur+sep, sep+dest+sep) {
-			os.Setenv("PATH", dest+sep+cur)
-		}
+		os.Setenv("PATH", shimDir+sep+cur)
 		return true, nil
 	}
 	opts.Reportf("checking", 0.1)
-	if util.Which("rtk") != "" && !opts.Upgrade {
+	if p := util.ResolveRtkBin(); p != "" && !opts.Upgrade {
 		opts.Reportf("already installed", 1)
 		return true, nil
 	}
@@ -110,6 +112,11 @@ func rtkInstallPrebuilt(asset string, opts core.RunOpts) bool {
 	rtkBin := filepath.Join(dest, "rtk")
 	_ = os.Chmod(rtkBin, 0o755)
 	if !util.Exists(rtkBin) {
+		return false
+	}
+	if !util.BinaryHealthy(rtkBin) {
+		util.L.Debug("rtk prebuilt binary failed --version probe; trying fallback installers")
+		_ = os.Remove(rtkBin)
 		return false
 	}
 	util.PrependProcessPath(dest)
@@ -233,22 +240,27 @@ func rtkWire(agent string) core.AgentFn {
 			util.L.Sub("[dry-run] would run: rtk " + strings.Join(args, " "))
 			return true, nil
 		}
-		if os.Getenv("TOKLESS_TEST") == "1" {
-			rtkTestShim(agent)
-			return true, nil
-		}
-		r := util.Run("rtk", args, util.RunOptions{Capture: true})
-		if r.Code != 0 {
-			util.L.Debug("rtk init exited " + clip(r.Stderr))
-			return false, nil
-		}
-		v := util.Run("rtk", []string{"init", "--show"}, util.RunOptions{Capture: true})
-		if v.Code != 0 {
-			util.L.Err("rtk init --show failed: " + clip(v.Stderr))
-			return false, nil
-		}
+	if os.Getenv("TOKLESS_TEST") == "1" {
+		rtkTestShim(agent)
 		return true, nil
 	}
+	rtkPath := util.ResolveRtkBin()
+	if rtkPath == "" {
+		util.L.Err("rtk binary not found on PATH or known install dirs")
+		return false, nil
+	}
+	r := util.Run(rtkPath, args, util.RunOptions{Capture: true})
+	if r.Code != 0 {
+		util.L.Debug("rtk init exited " + clip(r.Stderr))
+		return false, nil
+	}
+	v := util.Run(rtkPath, []string{"init", "--show"}, util.RunOptions{Capture: true})
+	if v.Code != 0 {
+		util.L.Err("rtk init --show failed: " + clip(v.Stderr))
+		return false, nil
+	}
+	return true, nil
+}
 }
 
 var rtk = &core.ToolManifest{
@@ -267,11 +279,15 @@ var rtk = &core.ToolManifest{
 	},
 	UnwireFor: map[string]core.AgentFn{
 		"claude": func(core.RunOpts) (bool, error) {
-			util.Run("rtk", []string{"init", "--uninstall", "--agent", "claude"}, util.RunOptions{})
+			if p := util.ResolveRtkBin(); p != "" {
+				util.Run(p, []string{"init", "--uninstall", "--agent", "claude"}, util.RunOptions{})
+			}
 			return true, nil
 		},
 		"opencode": func(core.RunOpts) (bool, error) {
-			util.Run("rtk", []string{"init", "--uninstall", "--agent", "opencode"}, util.RunOptions{})
+			if p := util.ResolveRtkBin(); p != "" {
+				util.Run(p, []string{"init", "--uninstall", "--agent", "opencode"}, util.RunOptions{})
+			}
 			return true, nil
 		},
 		"codex": func(core.RunOpts) (bool, error) {
@@ -298,3 +314,5 @@ var rtk = &core.ToolManifest{
 		},
 	},
 }
+
+
