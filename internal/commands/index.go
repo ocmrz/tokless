@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/HoangP8/tokless/internal/core"
 	"github.com/HoangP8/tokless/internal/util"
@@ -178,6 +180,33 @@ func resolveCodegraphBin() string {
 	}
 	return util.Which("codegraph")
 }
+func RunClaudeCodegraphSyncHook() int {
+	dir, err := os.Getwd()
+	if err != nil {
+		return 0
+	}
+	dir = findProjectDir(dir)
+	if !looksLikeProject(dir) {
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	if !util.Exists(filepath.Join(dir, ".codegraph")) {
+		if bin := resolveCodegraphBin(); bin != "" {
+			cmd := exec.CommandContext(ctx, bin, "init", "-i")
+			cmd.Dir = dir
+			_ = cmd.Run()
+		}
+		return 0
+	}
+	if bin := resolveCodegraphBin(); bin != "" {
+		cmd := exec.CommandContext(ctx, bin, "sync", "-q")
+		cmd.Dir = dir
+		_ = cmd.Run()
+	}
+	return 0
+}
+
 func RunContextModeWarmup() int {
 	if contextModeSentinelAlive() {
 		return 0

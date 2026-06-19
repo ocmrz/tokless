@@ -173,7 +173,7 @@ func TestInitSandboxWiring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read claude settings.json: %v", err)
 	}
-	if !strings.Contains(string(claudeSettings), "mcp__codegraph__*") {
+	if !strings.Contains(string(claudeSettings), "mcp__codegraph__.*") {
 		t.Errorf("claude settings.json doesn't auto-approve codegraph MCP, got: %s", string(claudeSettings))
 	}
 

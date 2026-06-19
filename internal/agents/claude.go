@@ -58,13 +58,39 @@ func AllowClaudeMcpTool(toolID string) {
 			allow = a
 		}
 	}
-	entry := "mcp__" + toolID + "__*"
+	entry := "mcp__" + toolID + "__.*"
 	for _, x := range allow {
 		if s, ok := x.(string); ok && s == entry {
 			return
 		}
 	}
 	allow = append(allow, entry)
+	perms.Set("allow", allow)
+	cfg.Set("permissions", perms)
+	_ = util.WriteFile(p.Settings, util.StringifyJSON(cfg))
+}
+
+// AllowClaudeBashPattern adds a Bash(specifier) entry to permissions.allow.
+func AllowClaudeBashPattern(pattern string) {
+	p := util.ClaudeCodePaths()
+	raw, _ := util.ReadFileSafe(p.Settings)
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		cfg = util.NewOrderedMap()
+	}
+	perms := getOrCreateMap(cfg, "permissions")
+	var allow []any
+	if v, ok := perms.Get("allow"); ok {
+		if a, ok := v.([]any); ok {
+			allow = a
+		}
+	}
+	for _, x := range allow {
+		if s, ok := x.(string); ok && s == pattern {
+			return
+		}
+	}
+	allow = append(allow, pattern)
 	perms.Set("allow", allow)
 	cfg.Set("permissions", perms)
 	_ = util.WriteFile(p.Settings, util.StringifyJSON(cfg))

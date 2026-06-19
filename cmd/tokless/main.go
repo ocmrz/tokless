@@ -107,6 +107,8 @@ func run() int {
 			return commands.RunRtkHook()
 		case "codex":
 			return commands.RunRtkHookCodex()
+		case "claude":
+			return commands.RunRtkHookClaude()
 		}
 	}
 	if len(os.Args) >= 4 && os.Args[1] == "context-mode-hook" && os.Args[2] == "agy" && os.Args[3] == "preinvocation" {

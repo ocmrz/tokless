@@ -155,7 +155,7 @@ func rtkTestShim(agent string) {
 			entry.Set("matcher", "Bash")
 			hook := util.NewOrderedMap()
 			hook.Set("type", "command")
-			hook.Set("command", "rtk hook claude")
+			hook.Set("command", "tokless rtk-hook claude")
 			entry.Set("hooks", []any{hook})
 			pre = append(pre, entry)
 			hooks.Set("PreToolUse", pre)
@@ -192,12 +192,112 @@ func claudeSettingsHasRtkHook(settingsPath string) bool {
 	}
 	for _, e := range s.Hooks.PreToolUse {
 		for _, h := range e.Hooks {
-			if strings.Contains(h.Command, "rtk hook") {
+			if strings.Contains(h.Command, "rtk hook") || strings.Contains(h.Command, "rtk-hook claude") {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// overrideClaudeRtkHook replaces rtk's own "rtk hook claude" PreToolUse hook command
+// with the tokless wrapper so the output includes explicit permissionDecision: "allow".
+func overrideClaudeRtkHook() {
+	cp := util.ClaudeCodePaths()
+	tok := toklessAbs()
+	newCmd := tok + " rtk-hook claude"
+	raw, ok := util.ReadFileSafe(cp.Settings)
+	if !ok {
+		return
+	}
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return
+	}
+	hooks, ok := cfg.Get("hooks")
+	if !ok {
+		return
+	}
+	hm, ok := hooks.(*util.OrderedMap)
+	if !ok {
+		return
+	}
+	ptVal, ok := hm.Get("PreToolUse")
+	if !ok {
+		return
+	}
+	pt, ok := ptVal.([]any)
+	if !ok {
+		return
+	}
+	changed := false
+	for _, g := range pt {
+		gm, ok := g.(*util.OrderedMap)
+		if !ok {
+			continue
+		}
+		hooksVal, ok := gm.Get("hooks")
+		if !ok {
+			continue
+		}
+		arr, ok := hooksVal.([]any)
+		if !ok {
+			continue
+		}
+		for _, h := range arr {
+			hm2, ok := h.(*util.OrderedMap)
+			if !ok {
+				continue
+			}
+			if c, ok := hm2.Get("command"); ok {
+				if s, ok := c.(string); ok && strings.Contains(s, "rtk hook claude") && !strings.Contains(s, "rtk-hook claude") {
+					hm2.Set("command", newCmd)
+					changed = true
+				}
+			}
+		}
+	}
+	if changed {
+		_ = util.WriteFile(cp.Settings, util.StringifyJSON(cfg))
+	}
+	agents.AllowClaudeBashPattern("Bash(rtk *)")
+	_ = os.Remove(filepath.Join(cp.Dir, "RTK.md"))
+	stripRtkRefFromClaudeMd(filepath.Join(cp.Dir, "CLAUDE.md"))
+}
+
+func toklessAbs() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "tokless"
+	}
+	if strings.ContainsAny(exe, " \t") {
+		return "tokless"
+	}
+	return exe
+}
+
+// stripRtkRefFromClaudeMd removes only the @RTK.md reference line from CLAUDE.md,
+// preserving all other user content.
+func stripRtkRefFromClaudeMd(path string) {
+	raw, ok := util.ReadFileSafe(path)
+	if !ok {
+		return
+	}
+	lines := strings.Split(raw, "\n")
+	var kept []string
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if t == "@RTK.md" || t == "@RTK.md\n" {
+			continue
+		}
+		kept = append(kept, l)
+	}
+	result := strings.TrimSpace(strings.Join(kept, "\n"))
+	if result == "" {
+		_ = os.Remove(path)
+		return
+	}
+	_ = util.WriteFile(path, result+"\n")
 }
 
 func rtkWireAntigravity() core.AgentFn {
@@ -253,6 +353,9 @@ func rtkWire(agent string) core.AgentFn {
 	if r.Code != 0 {
 		util.L.Debug("rtk init exited " + clip(r.Stderr))
 		return false, nil
+	}
+	if agent == "claude" {
+		overrideClaudeRtkHook()
 	}
 	v := util.Run(rtkPath, []string{"init", "--show"}, util.RunOptions{Capture: true})
 	if v.Code != 0 {

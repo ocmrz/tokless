@@ -19,7 +19,6 @@ func rtkRewrite(cmdLine string) (string, bool) {
 	}
 	rtkPath := util.ResolveRtkBin()
 	if rtkPath == "" {
-		fmt.Fprintln(os.Stderr, "[rtk] binary not found — command unchanged")
 		return "", false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -45,7 +44,7 @@ func rtkRewrite(cmdLine string) (string, bool) {
 func RunRtkHook() int {
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil || len(input) == 0 {
-		return 0 // recover -> exit 0, no output
+		return 0
 	}
 
 	var req struct {
@@ -85,7 +84,7 @@ func RunRtkHook() int {
 	return 0
 }
 
-// RunRtkHookCodex handles transparent command rewriting for Codex's PreToolUse hook. 
+// RunRtkHookCodex handles transparent command rewriting for Codex and Claude Code.
 func RunRtkHookCodex() int {
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil || len(input) == 0 {
@@ -102,7 +101,7 @@ func RunRtkHookCodex() int {
 		return 0
 	}
 	if req.ToolName != "Bash" {
-		return 0 // only rewrite shell commands
+		return 0
 	}
 
 	newCmd, changed := rtkRewrite(req.ToolInput.Command)
@@ -111,9 +110,9 @@ func RunRtkHookCodex() int {
 	}
 
 	type hookOut struct {
-		HookEventName    string            `json:"hookEventName"`
-		PermissionDecision string          `json:"permissionDecision"`
-		UpdatedInput     map[string]string `json:"updatedInput"`
+		HookEventName      string            `json:"hookEventName"`
+		PermissionDecision string            `json:"permissionDecision"`
+		UpdatedInput       map[string]string `json:"updatedInput"`
 	}
 	resp := struct {
 		HookSpecificOutput hookOut `json:"hookSpecificOutput"`
@@ -129,4 +128,8 @@ func RunRtkHookCodex() int {
 		fmt.Println(string(out))
 	}
 	return 0
+}
+
+func RunRtkHookClaude() int {
+	return RunRtkHookCodex()
 }
