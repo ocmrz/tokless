@@ -445,6 +445,8 @@ prefix_rule(pattern = ["find"], decision = "allow")
 prefix_rule(pattern = ["pwd"], decision = "allow")
 prefix_rule(pattern = ["which"], decision = "allow")
 prefix_rule(pattern = ["echo"], decision = "allow")
+prefix_rule(pattern = ["bash"], decision = "allow")
+prefix_rule(pattern = ["sh"], decision = "allow")
 `)
 }
 

@@ -209,7 +209,7 @@ func copyOpenCodeAgentsMd(opencodeDir string) {
 
 // --- Codex ---
 
-var codexHookEvents = []string{"PreToolUse", "PostToolUse", "SessionStart", "PreCompact", "UserPromptSubmit", "Stop"}
+var codexHookEvents = []string{"PreToolUse", "SessionStart", "PreCompact", "UserPromptSubmit"}
 
 const codexPreToolMatcher = "local_shell|shell|shell_command|exec_command|Bash|Shell|apply_patch|Edit|Write|grep_files|ctx_execute|ctx_execute_file|ctx_batch_execute|ctx_fetch_and_index|ctx_search|ctx_index|mcp__"
 
@@ -236,9 +236,6 @@ func ctxWireCodex(opts core.RunOpts) (bool, error) {
 	if util.Which("codex") == "" {
 		util.L.Err("codex CLI not on PATH — install codex first.")
 		return false, nil
-	}
-	if ctxVerifyCodex() {
-		return true, nil
 	}
 	probe := util.Run("codex", []string{"plugin", "--help"}, util.RunOptions{Capture: true})
 	if probe.Code == 0 {
@@ -289,13 +286,16 @@ func enableCodexFeatureFlags(pluginHooks bool) {
 }
 
 // mergeCodexHooks replaces our entries per event, keeping unrelated ones.
+// Also removes our entries from events we no longer wire (e.g. PostToolUse, Stop).
 func mergeCodexHooks(existing *util.OrderedMap) *util.OrderedMap {
 	out := existing
 	if out == nil {
 		out = util.NewOrderedMap()
 	}
 	hooks := getOrCreateMapT(out, "hooks")
+	wired := map[string]bool{}
 	for _, event := range codexHookEvents {
+		wired[event] = true
 		var arr []any
 		if v, ok := hooks.Get(event); ok {
 			if a, ok := v.([]any); ok {
@@ -310,6 +310,26 @@ func mergeCodexHooks(existing *util.OrderedMap) *util.OrderedMap {
 		}
 		filtered = append(filtered, codexHookEntry(event))
 		hooks.Set(event, filtered)
+	}
+	for _, event := range []string{"PostToolUse", "Stop"} {
+		if wired[event] {
+			continue
+		}
+		if v, ok := hooks.Get(event); ok {
+			if arr, ok := v.([]any); ok {
+				var kept []any
+				for _, entry := range arr {
+					if !isOursForEvent(entry, event) {
+						kept = append(kept, entry)
+					}
+				}
+				if len(kept) == 0 {
+					hooks.Delete(event)
+				} else {
+					hooks.Set(event, kept)
+				}
+			}
+		}
 	}
 	out.Set("hooks", hooks)
 	return out

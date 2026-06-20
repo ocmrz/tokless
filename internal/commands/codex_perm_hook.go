@@ -10,17 +10,16 @@ import (
 	"github.com/HoangP8/tokless/internal/util"
 )
 
-// codexPermAllowlist is the set of first-tokens that are auto-approved.
 var codexPermAllowlist = map[string]bool{
-	"rtk": true, "tokless": true, "git": true, "ls": true,
+	"rtk": true, "tokless": true, "git": true, "cd": true, "ls": true,
 	"node": true, "npm": true, "npx": true,
 	"context-mode": true, "codegraph": true,
 	"cat": true, "head": true, "tail": true,
 	"grep": true, "find": true, "pwd": true,
 	"which": true, "echo": true, "true": true, "false": true,
+	"bash": true,
 }
 
-// RunCodexPermHook handles Codex's PermissionRequest hook.
 func RunCodexPermHook() int {
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil || len(input) == 0 {
@@ -65,10 +64,22 @@ func codexPermAllow(toolName, command string) bool {
 	if cmd == "" {
 		return false
 	}
-	tok := cmd
-	if sp := strings.IndexAny(tok, " \t"); sp >= 0 {
-		tok = tok[:sp]
+	tok := firstToken(cmd)
+	tok = stripPath(tok)
+	if tok == "bash" || tok == "sh" {
+		return bashInnerScriptAllAllowed(cmd)
 	}
+	return codexPermAllowlist[tok]
+}
+
+func firstToken(s string) string {
+	if sp := strings.IndexAny(s, " \t"); sp >= 0 {
+		return s[:sp]
+	}
+	return s
+}
+
+func stripPath(tok string) string {
 	if idx := strings.LastIndexByte(tok, '/'); idx >= 0 {
 		tok = tok[idx+1:]
 	}
@@ -79,5 +90,42 @@ func codexPermAllow(toolName, command string) bool {
 		tok = strings.TrimSuffix(strings.TrimSuffix(tok, ".exe"), ".cmd")
 		tok = strings.TrimSuffix(tok, ".bat")
 	}
-	return codexPermAllowlist[tok]
+	return tok
+}
+
+func bashInnerScriptAllAllowed(cmd string) bool {
+	rest := cmd
+	for _, flag := range []string{"-lc", "-c"} {
+		if idx := strings.Index(rest, flag); idx >= 0 {
+			rest = strings.TrimSpace(rest[idx+len(flag):])
+			break
+		}
+	}
+	if rest == "" {
+		return false
+	}
+	if (rest[0] == '"' && rest[len(rest)-1] == '"') ||
+		(rest[0] == '\'' && rest[len(rest)-1] == '\'') {
+		rest = rest[1 : len(rest)-1]
+	}
+	segments := splitScript(rest)
+	for _, seg := range segments {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		tok := stripPath(firstToken(seg))
+		if !codexPermAllowlist[tok] {
+			return false
+		}
+	}
+	return true
+}
+
+func splitScript(s string) []string {
+	s = strings.ReplaceAll(s, "||", "\x00")
+	s = strings.ReplaceAll(s, "&&", "\x00")
+	s = strings.ReplaceAll(s, "|", "\x00")
+	s = strings.ReplaceAll(s, ";", "\x00")
+	return strings.Split(s, "\x00")
 }
