@@ -220,7 +220,11 @@ func codexHookEntry(event string) *util.OrderedMap {
 	}
 	hook := util.NewOrderedMap()
 	hook.Set("type", "command")
-	hook.Set("command", "context-mode hook codex "+strings.ToLower(event))
+	if event == "SessionStart" {
+		hook.Set("command", "tokless codex-sessionstart")
+	} else {
+		hook.Set("command", "context-mode hook codex "+strings.ToLower(event))
+	}
 	entry.Set("hooks", []any{hook})
 	return entry
 }
@@ -350,13 +354,14 @@ func isOursForEvent(entry any, event string) bool {
 		return false
 	}
 	prefix := "context-mode hook codex " + strings.ToLower(event)
+	altPrefix := "tokless codex-sessionstart"
 	for _, h := range arr {
 		hm, ok := h.(*util.OrderedMap)
 		if !ok {
 			continue
 		}
 		if cmd, ok := hm.Get("command"); ok {
-			if s, ok := cmd.(string); ok && strings.HasPrefix(s, prefix) {
+			if s, ok := cmd.(string); ok && (strings.HasPrefix(s, prefix) || strings.HasPrefix(s, altPrefix)) {
 				return true
 			}
 		}

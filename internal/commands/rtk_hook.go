@@ -34,7 +34,7 @@ func rtkRewrite(cmdLine string) (string, bool) {
 	if newCmd == "" || newCmd == cmdLine {
 		return "", false
 	}
-	if !strings.HasPrefix(newCmd, "rtk ") {
+	if !strings.Contains(newCmd, "rtk ") {
 		return "", false
 	}
 	return newCmd, true
