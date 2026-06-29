@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/HoangP8/tokless/internal/core"
+	toolsPkg "github.com/HoangP8/tokless/internal/tools"
 	"github.com/HoangP8/tokless/internal/util"
 )
 
@@ -151,7 +152,7 @@ func RunInit(opts InitOptions) int {
 		if installedIDs[id] {
 			wireIDs = append(wireIDs, id)
 		} else {
-			skipped = append(skipped, id)
+			wireIDs = append(wireIDs, id)
 		}
 	}
 	for _, id := range skipped {
@@ -216,6 +217,7 @@ func RunInit(opts InitOptions) int {
 	}
 	wireBar.Done("")
 	util.SetQuiet(false)
+	toolsPkg.EnsureInstructionSeparators(wireIDs)
 
 	util.L.Raw("")
 	var fullyOK []string

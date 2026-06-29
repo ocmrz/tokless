@@ -164,7 +164,7 @@ func resolveHookProjectDirFromInput(input []byte) string {
 
 func resolveCodegraphBin() string {
 	if p := util.Which("codegraph"); p != "" {
-		res := util.Run("codegraph", []string{"--version"}, util.RunOptions{Capture: true})
+		res := util.Run(util.ResolveCodegraphBin(), []string{"--version"}, util.RunOptions{Capture: true})
 		if res.Code == 0 && strings.Contains(res.Stdout, ".") {
 			return p
 		}

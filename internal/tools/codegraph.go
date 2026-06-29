@@ -50,26 +50,30 @@ var (
 	realInstallRes  bool
 )
 
-// callRealInstall runs `codegraph install` once, probing supported flags.
-func codegraphRealInstall(opts core.RunOpts) bool {
+// codegraphRealInstall runs `codegraph install --target <agent>` per call.
+func codegraphRealInstall(opts core.RunOpts, agent string) bool {
 	if opts.DryRun {
 		util.L.Sub("[dry-run] would run: codegraph install --yes")
 		return true
 	}
-	realInstallOnce.Do(func() {
-		help := util.Run("codegraph", []string{"install", "--help"}, util.RunOptions{Capture: true})
-		hasYes := strings.Contains(help.Stdout, "--yes") || strings.Contains(help.Stderr, "--yes")
-		hasTarget := strings.Contains(help.Stdout, "--target") || strings.Contains(help.Stderr, "--target")
-		args := []string{"install"}
-		if hasYes {
-			args = append(args, "--yes")
+	help := util.Run(util.ResolveCodegraphBin(), []string{"install", "--help"}, util.RunOptions{Capture: true})
+	hasYes := strings.Contains(help.Stdout, "--yes") || strings.Contains(help.Stderr, "--yes")
+	hasTarget := strings.Contains(help.Stdout, "--target") || strings.Contains(help.Stderr, "--target")
+	args := []string{"install"}
+	if hasYes {
+		args = append(args, "--yes")
+	}
+	if hasTarget {
+		target := agent
+		if target == "antigravity" {
+			target = "gemini"
 		}
-		if hasTarget {
-			args = append(args, "--target", "all")
+		if target == "" {
+			target = "all"
 		}
-		realInstallRes = util.Run("codegraph", args, util.RunOptions{Capture: true}).Code == 0
-	})
-	return realInstallRes
+		args = append(args, "--target", target)
+	}
+	return util.Run(util.ResolveCodegraphBin(), args, util.RunOptions{Capture: true}).Code == 0
 }
 
 // codegraphConfigureMcp writes the MCP entry tokless-side.
@@ -153,14 +157,14 @@ func codegraphIndexProject(dir string, opts core.RunOpts) (bool, error) {
 	hasIndex := util.Exists(filepath.Join(dir, ".codegraph"))
 	var res util.ExecResult
 	if hasIndex {
-		res = util.Run("codegraph", []string{"sync"}, util.RunOptions{Cwd: dir, Capture: true})
+		res = util.Run(util.ResolveCodegraphBin(), []string{"sync"}, util.RunOptions{Cwd: dir, Capture: true})
 		if res.Code == 0 {
 			return true, nil
 		}
 	}
-	res = util.Run("codegraph", []string{"init", "-i"}, util.RunOptions{Cwd: dir, Capture: true})
+	res = util.Run(util.ResolveCodegraphBin(), []string{"init", "-i"}, util.RunOptions{Cwd: dir, Capture: true})
 	if res.Code != 0 {
-		res = util.Run("codegraph", []string{"init"}, util.RunOptions{Cwd: dir, Capture: true})
+		res = util.Run(util.ResolveCodegraphBin(), []string{"init"}, util.RunOptions{Cwd: dir, Capture: true})
 	}
 	return res.Code == 0, nil
 }
@@ -177,12 +181,13 @@ func codegraphWire(agent string) core.AgentFn {
 			return codegraphVerify(agent), nil
 		}
 		if opts.DryRun {
-			return codegraphRealInstall(opts), nil
+			return codegraphRealInstall(opts, agent), nil
 		}
-		if ran := codegraphRealInstall(opts); !ran {
+		if ran := codegraphRealInstall(opts, agent); !ran {
 			util.L.Debug("codegraph's own installer failed; writing MCP entry directly")
 		}
 		codegraphConfigureMcp(agent)
+		writeCodegraphBlock(agent)
 		unwireAutoIndex(agent)
 		if agent == "antigravity" {
 			agents.InstallAntigravityCodegraphIndexHook()
@@ -191,6 +196,98 @@ func codegraphWire(agent string) core.AgentFn {
 		}
 		return codegraphVerify(agent), nil
 	}
+}
+
+// writeCodegraphBlock strips any existing CODEGRAPH_START/END block from the
+// agent's instructions file and inserts the canonical block at the position
+// defined by the order: caveman → codegraph → CONTEXT-MODE.
+func writeCodegraphBlock(agent string) bool {
+	var path string
+	switch agent {
+	case "claude":
+		path = util.ClaudeCodePaths().Instructions
+	case "opencode":
+		path = util.OpenCodePathsResolved().Instructions
+	case "codex":
+		path = util.CodexPathsResolved().Instructions
+	case "antigravity":
+		path = util.AntigravityPathsResolved().Instructions
+	default:
+		return false
+	}
+
+	const block = util.CodegraphMarkerStart + "\n" + util.CodegraphAgentBlock + "\n" + util.CodegraphMarkerEnd
+
+	raw, ok := util.ReadFileSafe(path)
+	if !ok {
+		_ = util.EnsureDir(filepath.Dir(path))
+		return util.WriteFile(path, block+"\n") == nil
+	}
+
+	for {
+		oi := strings.Index(raw, util.CodegraphMarkerStart)
+		if oi < 0 {
+			break
+		}
+		ci := strings.Index(raw[oi:], util.CodegraphMarkerEnd)
+		if ci < 0 {
+			break
+		}
+		end := oi + ci + len(util.CodegraphMarkerEnd)
+		if oi > 0 && raw[oi-1] == '\n' {
+			oi--
+		}
+		for end < len(raw) && raw[end] == '\n' {
+			end++
+			if end-oi > len(util.CodegraphMarkerStart)+len(util.CodegraphAgentBlock)+len(util.CodegraphMarkerEnd)+8 {
+				break
+			}
+		}
+		raw = raw[:oi] + raw[end:]
+	}
+
+	insertAt := -1
+	if i := strings.Index(raw, "<!-- caveman-end -->"); i >= 0 {
+		j := i + len("<!-- caveman-end -->")
+		for j < len(raw) && raw[j] == '\n' {
+			j++
+		}
+		insertAt = j
+	} else if i := strings.Index(raw, "<!-- CONTEXT-MODE_START -->"); i >= 0 {
+		if i > 0 {
+			k := i
+			for k > 0 && raw[k-1] == '\n' {
+				k--
+			}
+			insertAt = k
+		}
+	}
+	if insertAt < 0 {
+		sep := "\n\n"
+		if !strings.HasSuffix(raw, "\n") {
+			sep = "\n\n"
+		} else if strings.HasSuffix(raw, "\n\n") {
+			sep = ""
+		}
+		next := strings.TrimRight(raw, "\n") + sep + block + "\n"
+		if next == raw {
+			return false
+		}
+		return util.WriteFile(path, next) == nil
+	}
+
+	var next string
+	if insertAt > 0 && raw[insertAt-1] != '\n' {
+		next = raw[:insertAt] + "\n" + block + "\n\n" + raw[insertAt:]
+	} else if insertAt > 0 && raw[insertAt-1] == '\n' {
+		next = raw[:insertAt] + block + "\n\n" + raw[insertAt:]
+	} else {
+		next = block + "\n\n" + raw[insertAt:]
+	}
+	if next == raw {
+		return false
+	}
+	return util.WriteFile(path, next) == nil
 }
 
 func unwireAutoIndex(agent string) {

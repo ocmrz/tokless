@@ -260,9 +260,50 @@ func overrideClaudeRtkHook() {
 	if changed {
 		_ = util.WriteFile(cp.Settings, util.StringifyJSON(cfg))
 	}
+	if len(pt) > 1 {
+		seen := map[string]bool{}
+		dedup := make([]any, 0, len(pt))
+		deduped := false
+		for _, g := range pt {
+			cmd := firstHookCommand(g)
+			if seen[cmd] {
+				deduped = true
+				continue
+			}
+			seen[cmd] = true
+			dedup = append(dedup, g)
+		}
+		if deduped {
+			hm.Set("PreToolUse", dedup)
+			_ = util.WriteFile(cp.Settings, util.StringifyJSON(cfg))
+		}
+	}
 	agents.AllowClaudeBashPattern("Bash(rtk *)")
 	_ = os.Remove(filepath.Join(cp.Dir, "RTK.md"))
-	stripRtkRefFromClaudeMd(filepath.Join(cp.Dir, "CLAUDE.md"))
+	stripRtkRefFromMd(filepath.Join(cp.Dir, "CLAUDE.md"))
+}
+
+
+func firstHookCommand(g any) string {
+	gm, ok := g.(*util.OrderedMap)
+	if !ok {
+		return ""
+	}
+	hooksVal, ok := gm.Get("hooks")
+	if !ok {
+		return ""
+	}
+	arr, ok := hooksVal.([]any)
+	if !ok || len(arr) == 0 {
+		return ""
+	}
+	first, ok := arr[0].(*util.OrderedMap)
+	if !ok {
+		return ""
+	}
+	c, _ := first.Get("command")
+	s, _ := c.(string)
+	return s
 }
 
 func toklessAbs() string {
@@ -276,9 +317,9 @@ func toklessAbs() string {
 	return exe
 }
 
-// stripRtkRefFromClaudeMd removes only the @RTK.md reference line from CLAUDE.md,
-// preserving all other user content.
-func stripRtkRefFromClaudeMd(path string) {
+// stripRtkRefFromMd removes only the @RTK.md reference line from a markdown
+// file (CLAUDE.md, AGENTS.md, GEMINI.md), preserving all other user content.
+func stripRtkRefFromMd(path string) {
 	raw, ok := util.ReadFileSafe(path)
 	if !ok {
 		return
@@ -287,7 +328,7 @@ func stripRtkRefFromClaudeMd(path string) {
 	var kept []string
 	for _, l := range lines {
 		t := strings.TrimSpace(l)
-		if t == "@RTK.md" || t == "@RTK.md\n" {
+		if strings.HasPrefix(t, "@") && strings.HasSuffix(t, "RTK.md") {
 			continue
 		}
 		kept = append(kept, l)

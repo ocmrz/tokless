@@ -188,6 +188,8 @@ func UpsertBlock(src string, block *TomlBlock, merge bool) string {
 	return before + rendered + after
 }
 
+
+
 func RemoveBlock(src, header string) string {
 	r := findBlockRange(src, header)
 	if r == nil {

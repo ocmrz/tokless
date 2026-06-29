@@ -12,7 +12,7 @@
   <br />
   <br />
 
-  | Next week (22/6 - 28/6) |
+  | 📅 Next week plan (22/6 - 28/6) |
   | :--- |
   | <ul><li>Fix Codex & AGY hooks for better MCP (codegraph + context-mode) compliance rate</li><li>Add Pi support</li><li>Add Cursor support</li></ul> |
 </div>
