@@ -154,19 +154,24 @@ func RunRtkHook() int {
 		return 0
 	}
 
+	trimmed := strings.TrimSpace(cmdLine)
+	if strings.HasPrefix(trimmed, "rtk ") || trimmed == "rtk" {
+		return 0
+	}
+
 	newCmd, changed := rtkRewrite(cmdLine)
 	if !changed {
 		return 0
 	}
-	req.ToolCall.Args["CommandLine"] = newCmd
 
-	var resp struct {
+	req.ToolCall.Args["CommandLine"] = newCmd
+	resp := struct {
 		Decision  string                 `json:"decision"`
 		Overwrite map[string]interface{} `json:"overwrite"`
+	}{
+		Decision:  "allow",
+		Overwrite: req.ToolCall.Args,
 	}
-	resp.Decision = "modify"
-	resp.Overwrite = req.ToolCall.Args
-
 	if out, err := json.Marshal(resp); err == nil {
 		fmt.Println(string(out))
 	}
@@ -193,9 +198,9 @@ func RunRtkHookCodex() int {
 		return 0
 	}
 
-	newCmd, changed := rtkRewrite(req.ToolInput.Command)
-	if !changed {
-		return 0
+	updated := map[string]string{"command": req.ToolInput.Command}
+	if newCmd, changed := rtkRewrite(req.ToolInput.Command); changed {
+		updated["command"] = newCmd
 	}
 
 	type hookOut struct {
@@ -209,7 +214,7 @@ func RunRtkHookCodex() int {
 		HookSpecificOutput: hookOut{
 			HookEventName:      "PreToolUse",
 			PermissionDecision: "allow",
-			UpdatedInput:       map[string]string{"command": newCmd},
+			UpdatedInput:       updated,
 		},
 	}
 

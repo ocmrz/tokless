@@ -57,6 +57,9 @@ func codexPermAllow(toolName, command string) bool {
 	if toolName == "apply_patch" {
 		return true
 	}
+	if strings.HasPrefix(toolName, "ctx_") || strings.HasPrefix(toolName, "codegraph_") {
+		return true
+	}
 	if toolName != "Bash" {
 		return false
 	}

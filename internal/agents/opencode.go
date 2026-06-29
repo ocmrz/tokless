@@ -44,7 +44,6 @@ func ConfigureOpenCodeMcp(toolID string) (changed bool, file string) {
 	}
 	mcp.Set(toolID, desired)
 	_ = util.WriteFile(p.Config, util.StringifyJSON(cfg))
-	injectMcpInstructions("opencode", toolID, p.Instructions, spawn)
 	return true, p.Config
 }
 
@@ -71,7 +70,6 @@ func RemoveOpenCodeMcp(toolID string) bool {
 	}
 	mcp.Delete(toolID)
 	_ = util.WriteFile(p.Config, util.StringifyJSON(cfg))
-	util.RemoveInstructionsFileBlock(p.Instructions, "opencode", toolID)
 	return true
 }
 

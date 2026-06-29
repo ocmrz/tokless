@@ -51,7 +51,7 @@ func helpText() string {
 		"  " + cy("tokless index") + "        Build per-project indexes (codegraph) in the current dir\n" +
 		"  " + cy("tokless uninstall") + "    Remove everything tokless ever touched\n\n" +
 		util.C.Bold("Flags:") + "\n" +
-		"  --agents <list>     Limit to a subset: claude,opencode,codex\n" +
+		"  --agents <list>     Limit to a subset: claude,opencode,codex,antigravity\n" +
 		"  --tools <list>      Limit to a subset: rtk,caveman,codegraph,context-mode\n" +
 		"  --dry-run           Show what would change without writing anything\n" +
 		"  --verbose           Show every step\n\n" +
@@ -114,19 +114,9 @@ func run() int {
 	if len(os.Args) >= 3 && os.Args[1] == "codex-perm" && os.Args[2] == "codex" {
 		return commands.RunCodexPermHook()
 	}
-	if len(os.Args) >= 4 && os.Args[1] == "context-mode-hook" && os.Args[2] == "agy" && os.Args[3] == "preinvocation" {
-		return commands.RunContextModePreInvocationAgy()
-	}
-	if len(os.Args) >= 4 && os.Args[1] == "context-mode-hook" && os.Args[2] == "agy" && os.Args[3] == "pretooluse" {
-		return commands.RunContextModePreToolUseAgy()
-	}
-	if len(os.Args) >= 4 && os.Args[1] == "context-mode-hook" && os.Args[2] == "codex" && os.Args[3] == "pretooluse" {
-		return commands.RunContextModePreToolUseCodex()
-	}
 	if len(os.Args) >= 3 && os.Args[1] == "agy-hook" && os.Args[2] == "codegraph-index" {
 		return commands.RunCodegraphIndexHook()
 	}
-
 
 	p := parseArgs(os.Args[1:])
 	if p.bools["verbose"] {

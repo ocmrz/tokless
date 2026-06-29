@@ -1,9 +1,9 @@
 package commands
 
 import (
-	"os"
-	"os/exec"
 	"testing"
+
+	"github.com/HoangP8/tokless/internal/util"
 )
 
 func TestShellTokens(t *testing.T) {
@@ -180,17 +180,7 @@ func containsRtkPrefix(s string) bool {
 	return false
 }
 
+// utilHaveRtk returns true if the rtk binary is available on this system.
 func utilHaveRtk() bool {
-	for _, p := range []string{
-		"/home/docker_user/.local/bin/rtk",
-		"/usr/local/bin/rtk",
-	} {
-		if _, err := exec.LookPath("rtk"); err == nil {
-			return true
-		}
-		if _, err := os.Stat(p); err == nil {
-			return true
-		}
-	}
-	return false
+	return util.ResolveRtkBin() != ""
 }
