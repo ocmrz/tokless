@@ -75,7 +75,7 @@ func opencodePlugins(t *testing.T, path string) []string {
 }
 
 // The reliability guarantee: after `tokless update`, resync re-wires context-mode
-// on a wired agent, re-pinning any stale entry to the resolved version.
+// on a wired agent.
 func TestResyncWiring_RepinsContextModeVersion(t *testing.T) {
 	t.Setenv("TOKLESS_TEST", "1")
 	home := t.TempDir()
@@ -96,8 +96,8 @@ func TestResyncWiring_RepinsContextModeVersion(t *testing.T) {
 	resyncWiring([]*core.ToolManifest{ctxToolForTest(t)})
 
 	got := opencodePlugins(t, ocJSON)
-	if len(got) != 1 || got[0] != "context-mode@1.0.0" {
-		t.Fatalf("resync must re-pin to resolved version: got %v want [context-mode@1.0.0]", got)
+	if len(got) != 1 || got[0] != "context-mode" {
+		t.Fatalf("resync must re-wire to bare upstream spec: got %v want [context-mode]", got)
 	}
 }
 

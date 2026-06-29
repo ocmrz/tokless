@@ -196,6 +196,68 @@ func TestConfigureAntigravityMcpMergeAndRemove(t *testing.T) {
 	}
 }
 
+func TestCleanupLegacyAntigravityContextMode(t *testing.T) {
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	defer util.SetHomeOverride("")
+
+	gemini := filepath.Join(home, ".gemini")
+	hooksDir := filepath.Join(gemini, "config")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hooksFile := filepath.Join(hooksDir, "hooks.json")
+	original := `{"rtk":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"tokless rtk-hook agy"}]}]},"ctx":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"context-mode hook gemini-cli beforetool"}]}]},"tokless-context-mode":{"PreToolUse":[{"matcher":"","hooks":[]}]}}`
+	if err := os.WriteFile(hooksFile, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	CleanupLegacyAntigravityContextMode()
+
+	got, err := os.ReadFile(hooksFile)
+	if err != nil {
+		t.Fatalf("hooks.json missing after cleanup: %v", err)
+	}
+	gs := string(got)
+	if strings.Contains(gs, `"ctx"`) || strings.Contains(gs, `"tokless-context-mode"`) {
+		t.Fatalf("legacy groups still present:\n%s", gs)
+	}
+	if !strings.Contains(gs, `"rtk"`) || !strings.Contains(gs, "rtk-hook agy") {
+		t.Fatalf("unrelated rtk group was clobbered:\n%s", gs)
+	}
+	if strings.Contains(gs, "context-mode hook gemini-cli") {
+		t.Fatalf("legacy context-mode hook command still present:\n%s", gs)
+	}
+
+	CleanupLegacyAntigravityContextMode()
+	got2, _ := os.ReadFile(hooksFile)
+	if string(got2) != gs {
+		t.Fatalf("second pass mutated hooks.json:\n%s\nvs\n%s", got2, gs)
+	}
+}
+
+// TestCleanupLegacyAntigravityContextModeNoLegacyIsNoop ensures the migration
+// is a clean no-op on a hooks.json that never had a legacy group.
+func TestCleanupLegacyAntigravityContextModeNoLegacyIsNoop(t *testing.T) {
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	defer util.SetHomeOverride("")
+
+	hooksFile := filepath.Join(home, ".gemini", "config", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(hooksFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := `{"rtk":{"PreToolUse":[]}}`
+	if err := os.WriteFile(hooksFile, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	CleanupLegacyAntigravityContextMode()
+	got, _ := os.ReadFile(hooksFile)
+	if string(got) != original {
+		t.Fatalf("unexpected mutation:\nbefore:\n%s\nafter:\n%s", original, got)
+	}
+}
+
 func TestAgyKnownBinDirsPerOS(t *testing.T) {
 	setGoos(t, "windows")
 	t.Setenv("LOCALAPPDATA", `C:\Users\u\AppData\Local`)

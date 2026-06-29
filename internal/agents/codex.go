@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -18,16 +19,18 @@ func ConfigureCodexMcp(toolID string) (changed bool, file string) {
 	p := util.CodexPathsResolved()
 	_ = util.EnsureDir(p.Dir)
 	raw, _ := util.ReadFileSafe(p.Config)
+	raw = sweepStaleHookStateEntries(raw)
 	var spawn util.McpSpawn
 	if toolID == "codegraph" {
 		spawn = util.WrapAutoIndex("codex", util.PickMcpSpawn("codegraph", "serve", "--mcp"))
 	} else {
-		spawn = util.PickMcpSpawn("context-mode")
+		spawn = util.PickMcpSpawn(toolID)
 	}
 	block := util.NewTomlBlock("mcp_servers." + toolID)
 	block.Set("command", spawn.Command)
 	block.Set("args", spawn.Args)
 	block.Set("enabled", true)
+	block.Set("default_tools_approval_mode", "approve")
 	next := util.UpsertBlock(raw, block, false)
 	next = applyCodexApprovalPolicy(next)
 	if next == raw {
@@ -43,10 +46,40 @@ func CodexHasMcp(toolID string) bool {
 	return util.HasBlock(raw, "mcp_servers."+toolID)
 }
 
+// sweepStaleHookStateEntries removes [hooks.state."..."] entries from config.toml
+// whose hooksFile path is NOT the current codexHooksFile().
+func sweepStaleHookStateEntries(raw string) string {
+	current := codexHooksFile()
+	re := regexp.MustCompile(`^\[hooks\.state\."([^"]+)"\]\s*$`)
+	lines := strings.SplitAfter(raw, "\n")
+	var out strings.Builder
+	for i := 0; i < len(lines); {
+		lineNoNL := strings.TrimRight(lines[i], "\r\n")
+		m := re.FindStringSubmatch(lineNoNL)
+		if m == nil {
+			out.WriteString(lines[i])
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(lines) && !strings.HasPrefix(strings.TrimLeft(lines[j], " \t"), "[") {
+			j++
+		}
+		if strings.HasPrefix(m[1], current+":") {
+			for ; i < j; i++ {
+				out.WriteString(lines[i])
+			}
+			continue
+		}
+		i = j
+	}
+	return out.String()
+}
+
 // --- Codex rtk PreToolUse hook ---
 
 const (
-	codexHookMatcher     = "Bash"
+	codexHookMatcher     = "Bash|apply_patch|ctx_.*|codegraph_.*"
 	codexHookTimeout     = 10
 	codexPermHookMatcher = "Bash|apply_patch"
 	codexPermHookTimeout = 5
@@ -178,6 +211,182 @@ func codexPermGroup(command string) *util.OrderedMap {
 	return group
 }
 
+const (
+	codexCtxHookMatcher = "local_shell|shell|shell_command|exec_command|Bash|Shell|apply_patch|Edit|Write|grep_files|ctx_execute|ctx_execute_file|ctx_batch_execute|ctx_fetch_and_index|ctx_search|ctx_index|mcp__"
+	codexCtxHookTimeout = 10
+)
+
+// codexCtxHookCommand matches upstream context-mode's Codex PreToolUse command.
+func codexCtxHookCommand() string {
+	return "context-mode hook codex pretooluse"
+}
+
+func codexCtxHookTrustHash(command string) string {
+	handler := map[string]interface{}{
+		"async":   false,
+		"command": command,
+		"timeout": codexCtxHookTimeout,
+		"type":    "command",
+	}
+	identity := map[string]interface{}{
+		"event_name": "pre_tool_use",
+		"matcher":    codexCtxHookMatcher,
+		"hooks":      []interface{}{handler},
+	}
+	b, _ := json.Marshal(identity)
+	sum := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func codexGroupHasCtx(group *util.OrderedMap) bool {
+	hooksObj, ok := group.Get("hooks")
+	if !ok {
+		return false
+	}
+	arr, ok := hooksObj.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, h := range arr {
+		hm, ok := h.(*util.OrderedMap)
+		if !ok {
+			continue
+		}
+		if cmd, ok := hm.Get("command"); ok {
+			if s, ok := cmd.(string); ok && (strings.Contains(s, "context-mode hook codex pretooluse") || strings.Contains(s, "context-mode-hook codex")) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func codexCtxGroup(command string) *util.OrderedMap {
+	hook := util.NewOrderedMap()
+	hook.Set("type", "command")
+	hook.Set("command", command)
+
+	group := util.NewOrderedMap()
+	group.Set("matcher", codexCtxHookMatcher)
+	group.Set("hooks", []interface{}{hook})
+	return group
+}
+
+// InstallCodexContextModeHook merges the context-mode redirect PreToolUse hook
+// into ~/.codex/hooks.json and pre-seeds its trust hash in config.toml.
+func InstallCodexContextModeHook() {
+	p := util.CodexPathsResolved()
+	_ = util.EnsureDir(p.Dir)
+	command := codexCtxHookCommand()
+
+	hooksFile := codexHooksFile()
+	raw, _ := util.ReadFileSafe(hooksFile)
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		cfg = util.NewOrderedMap()
+	}
+	hooks, ok := mapChild(cfg, "hooks")
+	if !ok {
+		hooks = util.NewOrderedMap()
+		cfg.Set("hooks", hooks)
+	}
+	var preArr []interface{}
+	if v, ok := hooks.Get("PreToolUse"); ok {
+		preArr, _ = v.([]interface{})
+	}
+	idx := -1
+	for i, g := range preArr {
+		if gm, ok := g.(*util.OrderedMap); ok && codexGroupHasCtx(gm) {
+			idx = i
+			break
+		}
+	}
+	group := codexCtxGroup(command)
+	if idx == -1 {
+		preArr = append(preArr, group)
+		idx = len(preArr) - 1
+	} else {
+		preArr[idx] = group
+	}
+	hooks.Set("PreToolUse", preArr)
+	if next := util.StringifyJSON(cfg); next != raw {
+		_ = util.WriteFile(hooksFile, next)
+	}
+
+	craw, _ := util.ReadFileSafe(p.Config)
+	cnext := applyCodexApprovalPolicy(craw)
+	features := util.NewTomlBlock("features")
+	features.Set("hooks", true)
+	cnext = util.UpsertBlock(cnext, features, false)
+	if cnext != craw {
+		_ = util.WriteFile(p.Config, cnext)
+	}
+}
+
+// RemoveCodexContextModeHook removes the context-mode redirect group from
+// hooks.json and its trust entry from config.toml.
+func RemoveCodexContextModeHook() {
+	p := util.CodexPathsResolved()
+	hooksFile := codexHooksFile()
+	raw, ok := util.ReadFileSafe(hooksFile)
+	if !ok {
+		return
+	}
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return
+	}
+	hooks, ok := mapChild(cfg, "hooks")
+	if !ok {
+		return
+	}
+	v, ok := hooks.Get("PreToolUse")
+	if !ok {
+		return
+	}
+	preArr, ok := v.([]interface{})
+	if !ok {
+		return
+	}
+	kept := make([]interface{}, 0, len(preArr))
+	removedIdx := -1
+	for i, g := range preArr {
+		if gm, ok := g.(*util.OrderedMap); ok && codexGroupHasCtx(gm) {
+			removedIdx = i
+			continue
+		}
+		kept = append(kept, g)
+	}
+	if removedIdx < 0 {
+		return
+	}
+	if len(kept) == 0 {
+		hooks.Delete("PreToolUse")
+	} else {
+		hooks.Set("PreToolUse", kept)
+	}
+	if hooks.Len() == 0 {
+		_ = os.Remove(hooksFile)
+	} else {
+		_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
+	}
+	craw, _ := util.ReadFileSafe(p.Config)
+	key := hooksFile + ":pre_tool_use:" + strconv.Itoa(removedIdx) + ":0"
+	if cnext := util.RemoveBlock(craw, `hooks.state."`+key+`"`); cnext != craw {
+		_ = util.WriteFile(p.Config, cnext)
+	}
+}
+
+// HasCodexContextModeHook reports whether the context-mode redirect hook is
+// present in ~/.codex/hooks.json.
+func HasCodexContextModeHook() bool {
+	raw, ok := util.ReadFileSafe(codexHooksFile())
+	if !ok {
+		return false
+	}
+	return strings.Contains(raw, "context-mode hook codex pretooluse")
+}
+
 // InstallCodexRtkHook merges the rtk PreToolUse hook into ~/.codex/hooks.json.
 func InstallCodexRtkHook() {
 	p := util.CodexPathsResolved()
@@ -221,6 +430,7 @@ func InstallCodexRtkHook() {
 
 	// 2. Pre-seed trust + ensure MCP auto-approval in config.toml.
 	craw, _ := util.ReadFileSafe(p.Config)
+	craw = sweepStaleHookStateEntries(craw)
 	key := hooksFile + ":pre_tool_use:" + strconv.Itoa(idx) + ":0"
 	block := util.NewTomlBlock(`hooks.state."` + key + `"`)
 	block.Set("trusted_hash", codexHookTrustHash(command))
@@ -343,6 +553,7 @@ func InstallCodexPermissionHook() {
 	}
 	// Pre-seed trust hash.
 	craw, _ := util.ReadFileSafe(p.Config)
+	craw = sweepStaleHookStateEntries(craw)
 	key := hooksFile + ":permission_request:" + strconv.Itoa(idx) + ":0"
 	block := util.NewTomlBlock(`hooks.state."` + key + `"`)
 	block.Set("trusted_hash", codexPermHookTrustHash(command))

@@ -14,7 +14,7 @@ func antigravityMcpFiles() []string {
 	p := util.AntigravityPathsResolved()
 	files := []string{p.McpConfig, p.McpConfigCLI, p.Settings}
 	gemini := filepath.Join(util.Home(), ".gemini")
-	for _, variant := range []string{"antigravity-desktop", "antigravity-cli", "antigravity-ide"} {
+	for _, variant := range []string{"antigravity-ide"} {
 		if d := filepath.Join(gemini, variant); util.Exists(d) {
 			files = append(files, filepath.Join(d, "mcp_config.json"))
 		}
@@ -118,56 +118,6 @@ func InstallAntigravityRtkHook() {
 	}
 }
 
-// InstallAntigravityContextModeHook installs PreInvocation + PreToolUse hooks.
-func InstallAntigravityContextModeHook() {
-	tok := getToklessAbs()
-	if strings.ContainsAny(tok, " \t") {
-		tok = "tokless"
-	}
-
-	hooksFile := antigravityHooksFile()
-	raw, ok := util.ReadFileSafe(hooksFile)
-	var cfg *util.OrderedMap
-	if ok {
-		cfg = util.TryParseJsonc(raw)
-	}
-	if cfg == nil {
-		cfg = util.NewOrderedMap()
-	}
-
-	group := util.NewOrderedMap()
-
-	// PreInvocation: inject routing instructions at first prompt.
-	preInvHook := util.NewOrderedMap()
-	preInvHook.Set("type", "command")
-	preInvHook.Set("command", tok+" context-mode-hook agy preinvocation")
-	preInvHook.Set("timeout", 10)
-	preInvEntry := util.NewOrderedMap()
-	preInvEntry.Set("matcher", "")
-	preInvEntry.Set("hooks", []interface{}{preInvHook})
-	group.Set("PreInvocation", []interface{}{preInvEntry})
-
-	// PreToolUse: redirect raw tools to context-mode equivalents.
-	preToolHook := util.NewOrderedMap()
-	preToolHook.Set("type", "command")
-	preToolHook.Set("command", "context-mode hook gemini-cli beforetool")
-	preToolHook.Set("timeout", 10)
-	preToolUseEntry := util.NewOrderedMap()
-	preToolUseEntry.Set("matcher", "read_url_content|run_command|view_file")
-	preToolUseEntry.Set("hooks", []interface{}{preToolHook})
-	group.Set("PreToolUse", []interface{}{preToolUseEntry})
-
-	if _, ok := cfg.Get("tokless-context-mode"); ok {
-		cfg.Delete("tokless-context-mode")
-	}
-	cfg.Set("ctx", group)
-
-	if next := util.StringifyJSON(cfg); next != raw {
-		_ = util.WriteFile(hooksFile, next)
-	}
-}
-
-// RemoveAntigravityRtkHook removes the PreToolUse hook for agy.
 func RemoveAntigravityRtkHook() {
 	_ = os.Remove(antigravityRewriteScript())
 	_ = os.Remove(antigravityLegacyRewriteScript())
@@ -186,28 +136,6 @@ func RemoveAntigravityRtkHook() {
 	}
 }
 
-// RemoveAntigravityContextModeHook removes the context-mode hook for agy.
-func RemoveAntigravityContextModeHook() {
-	hooksFile := antigravityHooksFile()
-	raw, ok := util.ReadFileSafe(hooksFile)
-	if !ok {
-		return
-	}
-	cfg := util.TryParseJsonc(raw)
-	if cfg == nil {
-		return
-	}
-	if _, ok := cfg.Get("ctx"); ok {
-		cfg.Delete("ctx")
-		_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
-	}
-	if _, ok := cfg.Get("tokless-context-mode"); ok {
-		cfg.Delete("tokless-context-mode")
-		_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
-	}
-}
-
-// HasAntigravityRtkHook reports whether the hook is installed.
 func HasAntigravityRtkHook() bool {
 	raw, ok := util.ReadFileSafe(antigravityHooksFile())
 	if !ok {
@@ -260,70 +188,125 @@ func HasAntigravityRtkHook() bool {
 	return strings.Contains(cmdStr, "rtk-hook agy")
 }
 
-// HasAntigravityContextModeHook reports whether the context-mode hook is installed.
-func HasAntigravityContextModeHook() bool {
-	raw, ok := util.ReadFileSafe(antigravityHooksFile())
+// CleanupLegacyAntigravityContextMode strips every context-mode hook surface
+// tokless or the upstream agy plugin may have installed.
+func CleanupLegacyAntigravityContextMode() {
+	_ = os.RemoveAll(filepath.Join(util.Home(), ".gemini", "config", "plugins", "context-mode"))
+
+	hooksFile := antigravityHooksFile()
+	raw, ok := util.ReadFileSafe(hooksFile)
 	if !ok {
-		return false
+		return
 	}
 	cfg := util.TryParseJsonc(raw)
 	if cfg == nil {
-		return false
+		return
 	}
-	groupObj, ok := cfg.Get("ctx")
-	if !ok {
-		return false
+	changed := false
+	if _, ok := cfg.Get("ctx"); ok {
+		cfg.Delete("ctx")
+		changed = true
 	}
-	group, ok := groupObj.(*util.OrderedMap)
-	if !ok {
-		return false
+	if _, ok := cfg.Get("tokless-context-mode"); ok {
+		cfg.Delete("tokless-context-mode")
+		changed = true
 	}
-	pre, ok := group.Get("PreToolUse")
-	if !ok {
-		return false
+	for _, groupName := range append([]string(nil), cfg.Keys()...) {
+		groupObj, ok := cfg.Get(groupName)
+		if !ok {
+			continue
+		}
+		group, ok := groupObj.(*util.OrderedMap)
+		if !ok {
+			continue
+		}
+		for _, event := range append([]string(nil), group.Keys()...) {
+			v, ok := group.Get(event)
+			if !ok {
+				continue
+			}
+			entries, ok := v.([]interface{})
+			if !ok {
+				continue
+			}
+			kept := filterContextModeHookEntries(entries)
+			if len(kept) != len(entries) {
+				changed = true
+				if len(kept) == 0 {
+					group.Delete(event)
+				} else {
+					group.Set(event, kept)
+				}
+			}
+		}
+		if group.Len() == 0 {
+			cfg.Delete(groupName)
+			changed = true
+		}
 	}
-	preArr, ok := pre.([]interface{})
-	if !ok || len(preArr) == 0 {
-		return false
+	if !changed {
+		return
 	}
-	entry, ok := preArr[0].(*util.OrderedMap)
-	if !ok {
-		return false
+	if cfg.Len() == 0 {
+		_ = os.Remove(hooksFile)
+		return
 	}
-	hooksObj, ok := entry.Get("hooks")
-	if !ok {
-		return false
+	if next := util.StringifyJSON(cfg); next != raw {
+		_ = util.WriteFile(hooksFile, next)
 	}
-	hooksArr, ok := hooksObj.([]interface{})
-	if !ok || len(hooksArr) == 0 {
-		return false
+}
+
+func filterContextModeHookEntries(arr []interface{}) []interface{} {
+	var kept []interface{}
+	for _, e := range arr {
+		em, ok := e.(*util.OrderedMap)
+		if !ok {
+			kept = append(kept, e)
+			continue
+		}
+		hv, ok := em.Get("hooks")
+		if !ok {
+			kept = append(kept, e)
+			continue
+		}
+		ha, ok := hv.([]interface{})
+		if !ok {
+			kept = append(kept, e)
+			continue
+		}
+		drop := false
+		for _, h := range ha {
+			hm, ok := h.(*util.OrderedMap)
+			if !ok {
+				continue
+			}
+			if c, ok := hm.Get("command"); ok {
+				if s, ok := c.(string); ok && strings.Contains(s, "context-mode") {
+					drop = true
+					break
+				}
+			}
+		}
+		if !drop {
+			kept = append(kept, e)
+		}
 	}
-	hook, ok := hooksArr[0].(*util.OrderedMap)
-	if !ok {
-		return false
-	}
-	cmd, ok := hook.Get("command")
-	if !ok {
-		return false
-	}
-	cmdStr, ok := cmd.(string)
-	if !ok {
-		return false
-	}
-	return strings.Contains(cmdStr, "context-mode hook gemini")
+	return kept
 }
 
 // InstallAntigravityCodegraphToolDefs writes static codegraph MCP tool definitions
-// to the IDE variant's MCP directory.
+// to the agy MCP directory used by the CLI variant.
 func InstallAntigravityCodegraphToolDefs() {
 	gemini := filepath.Join(util.Home(), ".gemini")
-	ideMcpDir := filepath.Join(gemini, "antigravity-ide", "mcp", "codegraph")
-	if !util.Exists(filepath.Join(gemini, "antigravity-ide")) {
-		return
-	}
-	_ = util.EnsureDir(ideMcpDir)
-	for _, td := range codegraphToolDefs {
-		_ = util.WriteFile(filepath.Join(ideMcpDir, td.name+".json"), td.json)
+	for _, variant := range []string{"antigravity-cli", "antigravity-ide"} {
+		if !util.Exists(filepath.Join(gemini, variant)) {
+			continue
+		}
+		toolDir := filepath.Join(gemini, variant, "mcp", "codegraph")
+		_ = util.EnsureDir(toolDir)
+		for _, td := range codegraphToolDefs {
+			_ = util.WriteFile(filepath.Join(toolDir, td.name+".json"), td.json)
+		}
 	}
 }
 
@@ -347,13 +330,14 @@ const codegraphSearchJSON = `{"name":"codegraph_search","description":"Quick sym
 
 const codegraphCallersJSON = `{"name":"codegraph_callers","description":"List functions that call <symbol>. For the full flow, use codegraph_explore.","inputSchema":{"type":"object","properties":{"symbol":{"type":"string","description":"Name of the function, method, or class to find callers for"},"file":{"type":"string","description":"Narrow to the definition in this file (path or suffix) when several same-named symbols exist (e.g. one UserService per app in a monorepo)"},"limit":{"type":"number","description":"Maximum number of callers to return (default: 20)","default":20},"projectPath":{"type":"string","description":"Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."}},"required":["symbol"]}}`
 
-// RemoveAntigravityCodegraphToolDefs deletes the static codegraph tool definitions
-// from the IDE variant's MCP directory.
+// RemoveAntigravityCodegraphToolDefs deletes the static codegraph tool definitions.
 func RemoveAntigravityCodegraphToolDefs() {
 	gemini := filepath.Join(util.Home(), ".gemini")
-	ideMcpDir := filepath.Join(gemini, "antigravity-ide", "mcp", "codegraph")
-	for _, td := range codegraphToolDefs {
-		_ = os.Remove(filepath.Join(ideMcpDir, td.name+".json"))
+	for _, variant := range []string{"antigravity-cli", "antigravity-ide"} {
+		toolDir := filepath.Join(gemini, variant, "mcp", "codegraph")
+		for _, td := range codegraphToolDefs {
+			_ = os.Remove(filepath.Join(toolDir, td.name+".json"))
+		}
 	}
 }
 
@@ -584,7 +568,7 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 		spawn = util.PickMcpSpawn(toolID)
 	}
 	AllowAntigravityEntry("mcp(" + toolID + "/*)")
-	AllowAntigravityEntry("command(rtk)")
+	AllowAntigravityEntry("command(rtk )")
 	for _, f := range antigravityMcpFiles() {
 		_ = util.EnsureDir(filepath.Dir(f))
 		raw, _ := util.ReadFileSafe(f)
@@ -607,7 +591,7 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 		}
 	}
 	AllowAntigravityEntry("mcp(" + toolID + "/*)")
-	AllowAntigravityEntry("command(rtk)")
+	AllowAntigravityEntry("command(rtk )")
 	return changed, file
 }
 
