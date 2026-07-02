@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/HoangP8/tokless/internal/core"
+	toolsPkg "github.com/HoangP8/tokless/internal/tools"
 	"github.com/HoangP8/tokless/internal/util"
 )
 
@@ -77,19 +78,51 @@ func RunUpdate(opts InitOptions) int {
 		util.L.Raw("")
 		return 0
 	}
+	if !opts.Yes && util.IsInteractive() {
+		var pick []util.MultiSelectOption
+		for _, t := range core.ListTools() {
+			if !contains(changed, t.ID) {
+				continue
+			}
+			info := versions[t.ID]
+			installed := "not on PATH"
+			if info.Installed != nil {
+				installed = "v" + *info.Installed
+			}
+			latest := "?"
+			if info.Latest != nil {
+				latest = "v" + *info.Latest
+			}
+			hint := "install"
+			if info.Installed != nil {
+				hint = "upgrade"
+			}
+			pick = append(pick, util.MultiSelectOption{Value: t.ID, Label: padEnd(t.ID, 14) + installed + " → " + latest, Hint: hint, Selected: true})
+		}
+		changed = util.MultiSelect("Select tools to update", pick)
+		if len(changed) == 0 {
+			util.L.Raw("")
+			util.L.Info("No tools selected.")
+			util.L.Raw("")
+			return 0
+		}
+	}
 
 	util.L.Raw("  " + util.C.Bold("Upgrading: "+joinComma(changed)))
 	util.L.Raw("")
 	util.L.Raw("  " + util.C.Bold(util.C.Cyan("tokless")) + util.C.Gray("  global token-saver for AI agents"))
 
 	if !opts.DryRun {
-		minNode := 0
+		needNode, minNode := false, 0
 		for _, t := range core.ListTools() {
-			if contains(changed, t.ID) && t.MinNodeMajor > minNode {
-				minNode = t.MinNodeMajor
+			if contains(changed, t.ID) {
+				needNode = needNode || t.Channel == core.ChannelNpm
+				if t.MinNodeMajor > minNode {
+					minNode = t.MinNodeMajor
+				}
 			}
 		}
-		util.EnsureDeps(true, false, minNode)
+		util.EnsureDeps(needNode, false, minNode)
 	}
 	allTools := core.ListTools()
 	var tools []*core.ToolManifest
@@ -117,7 +150,9 @@ func RunUpdate(opts InitOptions) int {
 
 	// Re-pin upgraded tools' per-agent config to the freshly installed version.
 	if !opts.DryRun {
+		toolsPkg.ConfigureInstructionConflicts(true)
 		resyncWiring(tools)
+		toolsPkg.ConfigureInstructionConflicts(false)
 	}
 
 	// Upgrade mutated installed versions; drop cached latest so next read is fresh.
