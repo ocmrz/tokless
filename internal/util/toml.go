@@ -214,3 +214,19 @@ func SetTomlTopKey(src, key, value string) string {
 	}
 	return line + "\n" + src
 }
+
+// GetTomlTopKey reads a root-level string key's value ("" if absent).
+func GetTomlTopKey(src, key string) string {
+	re := regexp.MustCompile(`(?m)^` + escapeRe(key) + `\s*=\s*"([^"]*)"`)
+	m := re.FindStringSubmatch(src)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// RemoveTomlTopKey deletes a root-level string key line. No-op if absent.
+func RemoveTomlTopKey(src, key string) string {
+	re := regexp.MustCompile(`(?m)^` + escapeRe(key) + `\s*=.*\n?`)
+	return re.ReplaceAllString(src, "")
+}

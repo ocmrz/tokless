@@ -144,6 +144,49 @@ func AllowClaudeBashPattern(pattern string) {
 	_ = util.WriteFile(p.Settings, util.StringifyJSON(cfg))
 }
 
+// DisallowClaudeBashPattern removes a Bash(specifier) entry from permissions.allow.
+func DisallowClaudeBashPattern(pattern string) {
+	p := util.ClaudeCodePaths()
+	raw, ok := util.ReadFileSafe(p.Settings)
+	if !ok {
+		return
+	}
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return
+	}
+	perms, ok := mapChild(cfg, "permissions")
+	if !ok {
+		return
+	}
+	v, ok := perms.Get("allow")
+	if !ok {
+		return
+	}
+	arr, ok := v.([]any)
+	if !ok {
+		return
+	}
+	out := make([]any, 0, len(arr))
+	dropped := false
+	for _, e := range arr {
+		if s, ok := e.(string); ok && s == pattern {
+			dropped = true
+			continue
+		}
+		out = append(out, e)
+	}
+	if !dropped {
+		return
+	}
+	if len(out) == 0 {
+		perms.Delete("allow")
+	} else {
+		perms.Set("allow", out)
+	}
+	_ = util.WriteFile(p.Settings, util.StringifyJSON(cfg))
+}
+
 func RemoveClaudeMcp(toolID string) bool {
 	p := util.ClaudeCodePaths()
 	removed := false

@@ -380,6 +380,7 @@ func RemoveCodexContextModeHook() {
 	if cnext := util.RemoveBlock(craw, `hooks.state."`+key+`"`); cnext != craw {
 		_ = util.WriteFile(p.Config, cnext)
 	}
+	codexCleanupOrphanedConfig()
 }
 
 // HasCodexContextModeHook reports whether the context-mode redirect hook is
@@ -486,6 +487,7 @@ func RemoveCodexRtkHook() {
 	}
 	RemoveCodexPermissionHook()
 	RemoveCodexRulesAllowlist()
+	codexCleanupOrphanedConfig()
 }
 
 // HasCodexRtkHook reports whether the rtk hook is present in hooks.json.
@@ -638,8 +640,12 @@ func codexRulesFile() string {
 }
 
 // InstallCodexRulesAllowlist writes the shell allowlist to ~/.codex/rules/default.rules.
+// Surgical: only writes when the file does not exist — never overwrites user's rules.
 func InstallCodexRulesAllowlist() {
 	rulesFile := codexRulesFile()
+	if util.Exists(rulesFile) {
+		return
+	}
 	_ = util.EnsureDir(filepath.Dir(rulesFile))
 	_ = util.WriteFile(rulesFile, `# tokless-managed codex allowlist — our tools pre-approved, everything else prompts.
 
@@ -666,8 +672,12 @@ prefix_rule(pattern = ["sh"], decision = "allow")
 `)
 }
 
-// RemoveCodexRulesAllowlist removes the allowlist file.
+// RemoveCodexRulesAllowlist removes the allowlist file only if it carries our
+// marker — never deletes a user-authored rules file.
 func RemoveCodexRulesAllowlist() {
+	if !HasCodexRulesAllowlist() {
+		return
+	}
 	_ = os.Remove(codexRulesFile())
 	_ = os.Remove(filepath.Dir(codexRulesFile())) // ok if non-empty
 }
@@ -685,7 +695,40 @@ func HasCodexRulesAllowlist() bool {
 }
 
 func applyCodexApprovalPolicy(raw string) string {
-	return util.SetTomlTopKey(raw, "approval_policy", "on-request")
+	if util.GetTomlTopKey(raw, "approval_policy") == "" {
+		return util.SetTomlTopKey(raw, "approval_policy", "on-request")
+	}
+	return raw
+}
+
+// codexCleanupOrphanedConfig removes tokless-injected top-level config keys
+// when no tokless-managed hooks remain in hooks.json.
+func codexCleanupOrphanedConfig() {
+	p := util.CodexPathsResolved()
+	raw, ok := util.ReadFileSafe(p.Config)
+	if !ok {
+		return
+	}
+	changed := false
+	if !codexHasAnyToklessHook() {
+		if util.HasBlock(raw, "features") {
+			raw = util.RemoveBlock(raw, "features")
+			changed = true
+		}
+		if v := util.GetTomlTopKey(raw, "approval_policy"); v == "on-request" {
+			raw = util.RemoveTomlTopKey(raw, "approval_policy")
+			changed = true
+		}
+	}
+	if changed {
+		_ = util.WriteFile(p.Config, raw)
+	}
+}
+
+// codexHasAnyToklessHook reports whether any tokless-managed hook group
+// is still present in hooks.json.
+func codexHasAnyToklessHook() bool {
+	return HasCodexRtkHook() || HasCodexContextModeHook() || HasCodexPermissionHook()
 }
 
 // mapChild fetches an OrderedMap child by key.

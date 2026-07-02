@@ -264,6 +264,7 @@ func InstallAntigravityRtkHook() {
 	_ = os.Remove(antigravityRewriteScript())
 	_ = os.Remove(antigravityLegacyRewriteScript())
 	cleanAntigravityDeadGuiSettings()
+	AllowAntigravityEntry("command(rtk )")
 
 	hooksFile := antigravityHooksFile()
 	raw, ok := util.ReadFileSafe(hooksFile)
@@ -689,7 +690,6 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 		spawn = util.PickMcpSpawn(toolID)
 	}
 	AllowAntigravityEntry("mcp(" + toolID + "/*)")
-	AllowAntigravityEntry("command(rtk )")
 	for _, f := range antigravityMcpFiles() {
 		_ = util.EnsureDir(filepath.Dir(f))
 		raw, _ := util.ReadFileSafe(f)
@@ -712,7 +712,6 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 		}
 	}
 	AllowAntigravityEntry("mcp(" + toolID + "/*)")
-	AllowAntigravityEntry("command(rtk )")
 	return changed, file
 }
 

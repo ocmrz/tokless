@@ -198,6 +198,85 @@ func claudeSettingsHasRtkHook(settingsPath string) bool {
 	return false
 }
 
+// removeClaudeRtkHookGroup surgically strips the tokless-managed PreToolUse
+// group from ~/.claude/settings.json.
+func removeClaudeRtkHookGroup() {
+	cp := util.ClaudeCodePaths()
+	raw, ok := util.ReadFileSafe(cp.Settings)
+	if !ok {
+		return
+	}
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return
+	}
+	hooksV, ok := cfg.Get("hooks")
+	if !ok {
+		return
+	}
+	hooks, ok := hooksV.(*util.OrderedMap)
+	if !ok {
+		return
+	}
+	preV, ok := hooks.Get("PreToolUse")
+	if !ok {
+		return
+	}
+	preArr, ok := preV.([]any)
+	if !ok {
+		return
+	}
+	out := make([]any, 0, len(preArr))
+	changed := false
+	for _, g := range preArr {
+		gm, ok := g.(*util.OrderedMap)
+		if !ok {
+			out = append(out, g)
+			continue
+		}
+		hooksV, ok := gm.Get("hooks")
+		if !ok {
+			out = append(out, g)
+			continue
+		}
+		arr, ok := hooksV.([]any)
+		if !ok {
+			out = append(out, g)
+			continue
+		}
+		drop := false
+		for _, h := range arr {
+			hm, ok := h.(*util.OrderedMap)
+			if !ok {
+				continue
+			}
+			if c, ok := hm.Get("command"); ok {
+				if s, ok := c.(string); ok && strings.Contains(s, "rtk-hook claude") {
+					drop = true
+					break
+				}
+			}
+		}
+		if drop {
+			changed = true
+			continue
+		}
+		out = append(out, g)
+	}
+	if !changed {
+		return
+	}
+	if len(out) == 0 {
+		hooks.Delete("PreToolUse")
+	} else {
+		hooks.Set("PreToolUse", out)
+	}
+	if hooks.Len() == 0 {
+		cfg.Delete("hooks")
+	}
+	_ = util.WriteFile(cp.Settings, util.StringifyJSON(cfg))
+}
+
 // overrideClaudeRtkHook replaces rtk's own "rtk hook claude" PreToolUse hook command
 // with the tokless wrapper so the output includes explicit permissionDecision: "allow".
 func overrideClaudeRtkHook() {
@@ -420,15 +499,21 @@ var rtk = &core.ToolManifest{
 	},
 	UnwireFor: map[string]core.AgentFn{
 		"claude": func(core.RunOpts) (bool, error) {
-			if p := util.ResolveRtkBin(); p != "" {
-				util.Run(p, []string{"init", "--uninstall", "--agent", "claude"}, util.RunOptions{})
+			if os.Getenv("TOKLESS_TEST") != "1" {
+				if p := util.ResolveRtkBin(); p != "" {
+					util.Run(p, []string{"init", "--uninstall", "--agent", "claude"}, util.RunOptions{})
+				}
 			}
+			removeClaudeRtkHookGroup()
+			agents.DisallowClaudeBashPattern("Bash(rtk *)")
 			RemoveOwner("claude", "rtk")
 			return true, nil
 		},
 		"opencode": func(core.RunOpts) (bool, error) {
-			if p := util.ResolveRtkBin(); p != "" {
-				util.Run(p, []string{"init", "--uninstall", "--agent", "opencode"}, util.RunOptions{})
+			if os.Getenv("TOKLESS_TEST") != "1" {
+				if p := util.ResolveRtkBin(); p != "" {
+					util.Run(p, []string{"init", "--uninstall", "--agent", "opencode"}, util.RunOptions{})
+				}
 			}
 			RemoveOwner("opencode", "rtk")
 			return true, nil
@@ -440,6 +525,7 @@ var rtk = &core.ToolManifest{
 		},
 		"antigravity": func(core.RunOpts) (bool, error) {
 			agents.RemoveAntigravityRtkHook()
+			agents.RemoveAntigravityEntry("command(rtk )")
 			RemoveOwner("antigravity", "rtk")
 			return true, nil
 		},
