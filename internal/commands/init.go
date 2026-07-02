@@ -30,9 +30,10 @@ func contains(ss []string, s string) bool {
 
 func RunInit(opts InitOptions) int {
 	util.SetQuiet(!opts.Verbose)
-
-	util.L.Raw("")
-	util.L.Raw("  " + util.C.Bold(util.C.Cyan("tokless")) + util.C.Gray("  global token-saver for AI agents"))
+	if os.Getenv("TOKLESS_INSTALLER_RUN") != "1" {
+		MaybeSelfUpdate(opts)
+		util.L.Raw("")
+	}
 
 	allTools := core.ListTools()
 	var tools []*core.ToolManifest
@@ -60,7 +61,7 @@ func RunInit(opts InitOptions) int {
 		nodeOK, gitOK = util.EnsureDeps(needNode, needGit, minNode)
 	}
 
-	toolBar := util.NewProgress("")
+	toolBar := util.NewSectionProgress("Tools")
 	toolBar.Start(len(tools))
 	installLogs := map[string]string{}
 	for _, tool := range tools {
@@ -131,7 +132,6 @@ func RunInit(opts InitOptions) int {
 		util.L.Raw("  " + util.C.Gray("Non-interactive shell — auto-selecting installed agents: ") + util.C.Bold(joinComma(labels)))
 		util.L.Raw("  " + util.C.Gray("To choose explicitly: ") + util.C.Cyan("tokless --agents <claude,opencode,codex>"))
 	default:
-		util.L.Raw("")
 		var optsList []util.MultiSelectOption
 		for _, a := range allAgents {
 			opt := util.MultiSelectOption{Value: a.ID, Label: a.Label}
@@ -174,7 +174,7 @@ func RunInit(opts InitOptions) int {
 
 	failures := map[string][]string{}
 	wireLogs := map[string]string{}
-	wireBar := util.NewProgress("")
+	wireBar := util.NewSectionProgress("Agents")
 	wireBar.Start(len(wireIDs))
 	for _, agentID := range wireIDs {
 		agent := core.GetAgent(agentID)
@@ -239,6 +239,10 @@ func RunInit(opts InitOptions) int {
 		printFailureDetail(map[string]string{core.GetAgent(id).Label: wireLogs[id]})
 	}
 	notifyOutdated(opts)
+	if os.Getenv("TOKLESS_INSTALLER_RUN") == "1" {
+		MaybeSelfUpdate(opts)
+	}
+	printRepoFooter()
 	util.L.Raw("")
 	if len(failures) > 0 {
 		return 1

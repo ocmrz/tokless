@@ -29,16 +29,36 @@ type Progress struct {
 	stop    chan struct{}
 	tty     bool
 	out     *os.File
+	treeStyle bool
+	rows      int
 }
 
 func NewProgress(title string) *Progress {
 	return &Progress{title: title, tty: stdoutIsTTY() && vtReady, out: os.Stdout}
 }
 
+func NewSectionProgress(section string) *Progress {
+	return &Progress{
+		title:     section,
+		tty:       stdoutIsTTY() && vtReady,
+		out:       os.Stdout,
+		treeStyle: true,
+	}
+}
+
 func (p *Progress) Start(total int) {
 	if p.title != "" {
-		fmt.Fprintln(p.out, "\n  "+C.Bold(C.Cyan(p.title)))
+		if p.treeStyle {
+			if p.tty {
+				fmt.Fprintf(p.out, "%s %s\n", C.Magenta(C.Bold(pick("●", "*"))), C.Magenta(C.Bold(p.title)))
+			} else {
+				fmt.Fprintf(p.out, "%s%s\n", C.Dim(pick("┌─ ", "+- ")), C.Bold(p.title))
+			}
+		} else {
+			fmt.Fprintln(p.out, "\n  "+C.Bold(C.Cyan(p.title)))
+		}
 	}
+	p.rows = 0
 	if p.tty {
 		p.stop = make(chan struct{})
 		go p.spin()
@@ -75,6 +95,13 @@ func (p *Progress) Begin(label string) {
 		p.repaint()
 	}
 	p.mu.Unlock()
+}
+
+func (p *Progress) indent() string {
+	if p.treeStyle {
+		return C.Dim(pick("│   ", "|   "))
+	}
+	return "  "
 }
 
 // Step updates the active item's phase label and 0..1 fraction.
@@ -127,8 +154,11 @@ func (p *Progress) Complete(note string) {
 	if note != "" {
 		noteStr = C.Gray(" " + note)
 	}
-	fmt.Fprintf(p.out, "  %s %s %s%s\n", C.Green(Sym.Check), padEnd(p.current, 16),
+	fmt.Fprintf(p.out, "%s%s %s %s%s\n", p.indent(), C.Green(Sym.Check), padEnd(p.current, 16),
 		C.Gray(fmt.Sprintf("[%s] 100%%", fracBar(1))), noteStr)
+	if p.treeStyle {
+		p.rows++
+	}
 }
 
 func (p *Progress) Fail(reason string) {
@@ -136,7 +166,10 @@ func (p *Progress) Fail(reason string) {
 	defer p.mu.Unlock()
 	p.active = false
 	p.clearLine()
-	fmt.Fprintf(p.out, "  %s %s %s\n", C.Red(Sym.Cross), padEnd(p.current, 16), C.Red(reason))
+	fmt.Fprintf(p.out, "%s%s %s %s\n", p.indent(), C.Red(Sym.Cross), padEnd(p.current, 16), C.Red(reason))
+	if p.treeStyle {
+		p.rows++
+	}
 }
 
 func (p *Progress) Skip(note string) {
@@ -144,8 +177,11 @@ func (p *Progress) Skip(note string) {
 	defer p.mu.Unlock()
 	p.active = false
 	p.clearLine()
-	fmt.Fprintf(p.out, "  %s %s %s\n", C.Gray(Sym.Bullet), padEnd(p.current, 16),
+	fmt.Fprintf(p.out, "%s%s %s %s\n", p.indent(), C.Gray(Sym.Bullet), padEnd(p.current, 16),
 		C.Gray(fmt.Sprintf("[%s] 100%%  %s", fracBar(1), note)))
+	if p.treeStyle {
+		p.rows++
+	}
 }
 
 func (p *Progress) Done(summary string) {
@@ -156,7 +192,17 @@ func (p *Progress) Done(summary string) {
 	p.mu.Lock()
 	p.active = false
 	p.clearLine()
+	rows := p.rows
+	title := p.title
 	p.mu.Unlock()
+	if p.treeStyle {
+		if p.tty && title != "" {
+			corner := pick("┌─ ", "+- ")
+			fmt.Fprintf(p.out, "\x1b[%dA\r\x1b[2K%s%s\x1b[%dB\r", rows+1, C.Dim(corner), C.Bold(title), rows+1)
+		}
+		fmt.Fprintln(p.out, C.Dim(pick("│", "|")))
+		return
+	}
 	if summary != "" {
 		fmt.Fprintln(p.out, "  "+C.Gray(summary))
 	}
@@ -171,7 +217,7 @@ func (p *Progress) repaint() {
 	if p.phase != "" {
 		phase = C.Gray("  " + p.phase)
 	}
-	line := fmt.Sprintf("  %s %s %s%s%s", C.Cyan(frames[p.frame]), padEnd(p.current, 16),
+	line := fmt.Sprintf("%s%s %s %s%s%s", p.indent(), C.Cyan(frames[p.frame]), padEnd(p.current, 16),
 		C.Gray(fmt.Sprintf("[%s] %3d%%", fracBar(p.frac), pct)), phase, elapsed(time.Since(p.start)))
 	fmt.Fprint(p.out, "\r\x1b[2K"+line)
 }
