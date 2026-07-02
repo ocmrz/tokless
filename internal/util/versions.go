@@ -21,6 +21,7 @@ type VersionInfo struct {
 	Installed *string `json:"installed"`
 	Latest    *string `json:"latest"`
 	Channel   string  `json:"channel"`
+	Present   bool    `json:"present"`
 }
 
 type cacheShape struct {
@@ -183,6 +184,9 @@ func npmInstalledVersion(pkg string) *string {
 				return strp(d.Version)
 			}
 		}
+		if v := npmPrefixInstalledVersion(npmPrefix(), pkg); v != nil {
+			return v
+		}
 		if v := npmPrefixInstalledVersion(userLocalNpmPrefix(), pkg); v != nil {
 			return v
 		}
@@ -194,7 +198,7 @@ func npmInstalledVersion(pkg string) *string {
 // package.json and reads the version. Also checks ~/.bun/install/global.
 func bunInstalledVersion(pkg string) *string {
 	h := Home()
-	
+
 	// 1. Resolve symlink: ~/.bun/bin/<pkg> -> ../../node_modules/<pkg>/...
 	binLink := filepath.Join(h, ".bun", "bin", pkg)
 	if real, err := filepath.EvalSymlinks(binLink); err == nil && real != "" {
@@ -232,21 +236,25 @@ func GatherVersionsForce() map[string]VersionInfo { return gatherVersions(true) 
 func gatherVersions(force bool) map[string]VersionInfo {
 	if os.Getenv("TOKLESS_TEST") == "1" {
 		return map[string]VersionInfo{
-			"rtk":          {Installed: strp("0.40.0"), Latest: strp("0.40.0"), Channel: "github"},
-			"caveman":      {Installed: nil, Latest: strp("1.0.0"), Channel: "github"},
-			"codegraph":    {Installed: nil, Latest: strp("0.9.0"), Channel: "npm"},
-			"context-mode": {Installed: nil, Latest: strp("1.0.0"), Channel: "npm"},
-			"tokless":      {Installed: strp("0.1.0"), Latest: strp("0.1.0"), Channel: "npm"},
+			"rtk":          {Installed: strp("0.43.0"), Latest: strp("0.43.0"), Channel: "github", Present: false},
+			"caveman":      {Installed: nil, Latest: strp("1.9.0"), Channel: "github", Present: false},
+			"ponytail":     {Installed: nil, Latest: strp("4.8.4"), Channel: "github", Present: false},
+			"codegraph":    {Installed: nil, Latest: strp("1.1.6"), Channel: "npm", Present: false},
+			"context-mode": {Installed: nil, Latest: strp("1.0.169"), Channel: "npm", Present: false},
+			"tokless":      {Installed: strp("0.1.0"), Latest: strp("0.1.0"), Channel: "npm", Present: false},
 		}
 	}
 	// Latest (slow, network) is cached; installed (fast, local) is always live.
 	latest := cachedLatest(force)
 	out := map[string]VersionInfo{}
-	out["rtk"] = VersionInfo{Installed: rtkInstalledVersion(), Latest: latest["rtk"], Channel: "github"}
-	out["caveman"] = VersionInfo{Installed: cavemanInstalledVersion(), Latest: latest["caveman"], Channel: "github"}
-	out["codegraph"] = VersionInfo{Installed: npmInstalledVersion("@colbymchenry/codegraph"), Latest: latest["codegraph"], Channel: "npm"}
-	out["context-mode"] = VersionInfo{Installed: npmInstalledVersion("context-mode"), Latest: latest["context-mode"], Channel: "npm"}
-	out["tokless"] = VersionInfo{Installed: npmInstalledVersion("tokless"), Latest: latest["tokless"], Channel: "npm"}
+	out["rtk"] = VersionInfo{Installed: rtkInstalledVersion(), Latest: latest["rtk"], Channel: "github", Present: rtkInstalledVersion() != nil}
+	cv := cavemanInstalledVersion()
+	out["caveman"] = VersionInfo{Installed: cv, Latest: latest["caveman"], Channel: "github", Present: cv != nil || cavemanPresent()}
+	pv := ponytailInstalledVersion()
+	out["ponytail"] = VersionInfo{Installed: pv, Latest: latest["ponytail"], Channel: "github", Present: pv != nil || ponytailPresent()}
+	out["codegraph"] = VersionInfo{Installed: npmInstalledVersion("@colbymchenry/codegraph"), Latest: latest["codegraph"], Channel: "npm", Present: npmInstalledVersion("@colbymchenry/codegraph") != nil}
+	out["context-mode"] = VersionInfo{Installed: npmInstalledVersion("context-mode"), Latest: latest["context-mode"], Channel: "npm", Present: npmInstalledVersion("context-mode") != nil}
+	out["tokless"] = VersionInfo{Installed: npmInstalledVersion("tokless"), Latest: latest["tokless"], Channel: "npm", Present: npmInstalledVersion("tokless") != nil}
 	return out
 }
 
@@ -268,6 +276,8 @@ func InstalledVersionFor(id string) *string {
 		return npmInstalledVersion("tokless")
 	case "caveman":
 		return cavemanInstalledVersion()
+	case "ponytail":
+		return ponytailInstalledVersion()
 	}
 	return nil
 }
@@ -340,7 +350,6 @@ func StampCavemanVersion(version string) {
 }
 
 func cavemanInstalledVersion() *string {
-	presentDir := ""
 	for _, dir := range cavemanVersionDirs() {
 		if v := readCavemanMarker(dir); v != "" {
 			return strp(v)
@@ -348,24 +357,21 @@ func cavemanInstalledVersion() *string {
 		if v := readCavemanPkgVersion(dir); v != "" {
 			return strp(v)
 		}
-		if presentDir == "" && cavemanInstalled(dir) {
-			presentDir = dir
-		}
-	}
-
-	if presentDir != "" {
-		if latest := cachedLatest(false)["caveman"]; latest != nil {
-			_ = os.WriteFile(filepath.Join(presentDir, cavemanVersionMarker), []byte(*latest+"\n"), 0o644)
-			return latest
-		}
-		return strp(CavemanPresentSentinel)
 	}
 	return nil
 }
 
-const CavemanPresentSentinel = "present"
+// cavemanPresent reports whether a caveman install is on disk.
+func cavemanPresent() bool {
+	for _, dir := range cavemanVersionDirs() {
+		if cavemanInstalled(dir) {
+			return true
+		}
+	}
+	return false
+}
 
-var toolIDs = []string{"rtk", "caveman", "codegraph", "context-mode", "tokless"}
+var toolIDs = []string{"rtk", "caveman", "ponytail", "codegraph", "context-mode", "tokless"}
 
 var latestFetcher = fetchLatestFor
 
@@ -376,6 +382,8 @@ func fetchLatestFor(id string) *string {
 		return githubLatestRelease("rtk-ai/rtk")
 	case "caveman":
 		return githubLatestRelease("JuliusBrussee/caveman")
+	case "ponytail":
+		return githubLatestRelease("DietrichGebert/ponytail")
 	case "codegraph":
 		return npmLatest("@colbymchenry/codegraph")
 	case "context-mode":
@@ -501,9 +509,6 @@ func SemverGte(a, b string) bool { return SemverCompare(&a, &b) >= 0 }
 func CountOutdated(m map[string]VersionInfo) int {
 	n := 0
 	for _, v := range m {
-		if v.Installed != nil && *v.Installed == CavemanPresentSentinel {
-			continue
-		}
 		if v.Installed != nil && v.Latest != nil && SemverCompare(v.Installed, v.Latest) < 0 {
 			n++
 		}
@@ -513,4 +518,104 @@ func CountOutdated(m map[string]VersionInfo) int {
 
 func BustVersionCache() {
 	_ = os.Remove(cachePath())
+}
+
+const ponytailVersionMarker = ".tokless-version"
+
+// ponytailVersionDirs lists per-agent ponytail install dirs, priority order.
+func ponytailVersionDirs() []string {
+	home := Home()
+
+	claude := filepath.Join(home, ".claude")
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		claude = d
+	}
+
+	codex := filepath.Join(home, ".codex")
+	if d := os.Getenv("CODEX_HOME"); d != "" {
+		codex = d
+	}
+
+	gemini := filepath.Join(home, ".gemini")
+
+	return []string{
+		filepath.Join(OpenCodePathsResolved().Dir, "plugins", "ponytail"),
+		filepath.Join(claude, "plugins", "marketplaces", "ponytail"),
+		filepath.Join(claude, "plugins", "ponytail"),
+		filepath.Join(codex, "plugins", "ponytail"),
+		filepath.Join(codex, "plugins", "marketplaces", "ponytail"),
+		filepath.Join(codex, "skills", "ponytail"),
+		filepath.Join(home, ".agents", "skills", "ponytail"),
+		filepath.Join(gemini, "antigravity", "skills", "ponytail"),
+		filepath.Join(gemini, "config", "skills", "ponytail"),
+	}
+}
+
+// PonytailVersionDirsForTest exposes ponytailVersionDirs to tests outside the
+// util package.
+func PonytailVersionDirsForTest() []string { return ponytailVersionDirs() }
+
+// ponytailInstalled reports whether a ponytail install exists in dir.
+func ponytailInstalled(dir string) bool {
+	return Exists(filepath.Join(dir, "plugin.js")) ||
+		Exists(filepath.Join(dir, "plugin.mjs")) ||
+		Exists(filepath.Join(dir, "SKILL.md")) ||
+		Exists(filepath.Join(dir, "package.json"))
+}
+
+func readPonytailMarker(dir string) string {
+	if raw, ok := ReadFileSafe(filepath.Join(dir, ponytailVersionMarker)); ok {
+		return strings.TrimSpace(raw)
+	}
+	return ""
+}
+
+func readPonytailPkgVersion(dir string) string {
+	if raw, ok := ReadFileSafe(filepath.Join(dir, "package.json")); ok {
+		var pkg struct {
+			Version string `json:"version"`
+		}
+		if json.Unmarshal([]byte(raw), &pkg) == nil && pkg.Version != "" && pkg.Version != "0.1.0" {
+			return pkg.Version
+		}
+	}
+	return ""
+}
+
+// StampPonytailVersion records version into every present ponytail dir.
+func StampPonytailVersion(version string) {
+	if version == "" {
+		return
+	}
+	for _, dir := range ponytailVersionDirs() {
+		if ponytailInstalled(dir) {
+			_ = os.WriteFile(filepath.Join(dir, ponytailVersionMarker), []byte(version+"\n"), 0o644)
+		}
+	}
+}
+
+func ponytailInstalledVersion() *string {
+	if v := npmInstalledVersion("@dietrichgebert/ponytail"); v != nil {
+		return v
+	}
+	for _, dir := range ponytailVersionDirs() {
+		if v := readPonytailMarker(dir); v != "" {
+			return strp(v)
+		}
+		if v := readPonytailPkgVersion(dir); v != "" {
+			return strp(v)
+		}
+	}
+	return nil
+}
+
+// ponytailPresent reports whether a ponytail install is on disk, regardless of
+// whether its version can be determined.
+func ponytailPresent() bool {
+	for _, dir := range ponytailVersionDirs() {
+		if ponytailInstalled(dir) {
+			return true
+		}
+	}
+	return false
 }
