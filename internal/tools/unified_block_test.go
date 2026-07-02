@@ -11,11 +11,7 @@ import (
 	"github.com/HoangP8/tokless/internal/util"
 )
 
-// TestUnifiedBody_WiresAllOwnersAcrossAllAgents confirms writing each
-// owner across all four agents produces a body containing every section
-// heading and preserves the seeded user content.
-// Block-level registration so tests are independent of package init order
-// in this file (some packages compile without TestMain in some configs).
+// Keep tests independent of package init order.
 func init() {
 	Register()
 	agents.Register()
@@ -25,7 +21,14 @@ func TestUnifiedBody_WiresAllOwnersAcrossAllAgents(t *testing.T) {
 	setupHome(t)
 
 	agentsList := []string{"claude", "opencode", "codex", "antigravity"}
-	wireOrder := []string{"caveman", "codegraph", "context-mode", "ponytail", "karpathy"}
+	wireOrder := []string{"caveman", "codegraph", "context-mode", "ponytail"}
+	expectedOrder := []string{
+		util.SectionsByOwner["principles"],
+		util.SectionsByOwner["caveman"],
+		util.SectionsByOwner["ponytail"],
+		util.SectionsByOwner["codegraph"],
+		util.SectionsByOwner["context-mode"],
+	}
 
 	for _, agent := range agentsList {
 		t.Run(agent, func(t *testing.T) {
@@ -47,31 +50,55 @@ func TestUnifiedBody_WiresAllOwnersAcrossAllAgents(t *testing.T) {
 				t.Fatalf("read: %v", err)
 			}
 			body := string(raw)
-			for _, want := range []string{"## Talking (caveman) →", "## Building (ponytail) →", "## Search Code (codegraph) →", "## Context Window (context-mode) →", "## Engineering (karpathy) →"} {
-				if !strings.Contains(body, want) {
+			if !strings.Contains(body, "# Agent Instructions") {
+				t.Errorf("overview heading missing:\n%s", body)
+			}
+			if strings.Count(body, "# Agent Instructions") != 1 {
+				t.Errorf("overview heading duplicated:\n%s", body)
+			}
+			prev := -1
+			for _, want := range expectedOrder {
+				idx := strings.Index(body, want)
+				if idx < 0 {
 					t.Errorf("missing %q in body:\n%s", want, body)
+					continue
 				}
+				if idx <= prev {
+					t.Errorf("heading %q out of order:\n%s", want, body)
+				}
+				prev = idx
 			}
 			if !strings.Contains(body, "keep me") {
 				t.Errorf("user notes lost:\n%s", body)
+			}
+			for _, want := range []string{"### 1. Think Before Coding", "### 2. Simplicity First", "### 3. Surgical Changes", "### 4. Goal-Driven Execution"} {
+				if !strings.Contains(body, want) {
+					t.Errorf("missing principle subheading %q:\n%s", want, body)
+				}
+			}
+			for _, want := range []string{"Use Codegraph when", "Skip Codegraph", "Trust Codegraph results", "blast radius"} {
+				if !strings.Contains(body, want) {
+					t.Errorf("missing Codegraph instruction %q:\n%s", want, body)
+				}
+			}
+			if !strings.Contains(body, "call path") && !strings.Contains(body, "call paths") {
+				t.Errorf("missing Codegraph instruction %q:\n%s", "call path(s)", body)
 			}
 		})
 	}
 }
 
-// TestUnifiedBody_PerToolUnwire confirms per-tool unwire removes only its
-// section and leaves the body intact until the last owner exits.
 func TestUnifiedBody_PerToolUnwire(t *testing.T) {
 	setupHome(t)
 
 	agentsList := []string{"claude", "opencode", "codex", "antigravity"}
-	wireOrder := []string{"rtk", "caveman", "codegraph", "context-mode", "ponytail", "karpathy"}
+	wireOrder := []string{"caveman", "codegraph", "context-mode", "ponytail"}
 
 	for _, agent := range agentsList {
 		t.Run(agent, func(t *testing.T) {
 			path := agentInstructionPath(t, agent)
 			_ = util.EnsureDir(filepath.Dir(path))
-			_ = util.WriteFile(path, "# Notes\n\nkeep me\n")
+			_ = util.WriteFile(path, "")
 			for _, tool := range wireOrder {
 				tm := lookupTool(t, tool)
 				_, _ = tm.WireFor[agent](core.RunOpts{})
@@ -80,9 +107,6 @@ func TestUnifiedBody_PerToolUnwire(t *testing.T) {
 				tm := lookupTool(t, tool)
 				_, _ = tm.UnwireFor[agent](core.RunOpts{})
 				raw, _ := os.ReadFile(path)
-				if os.IsNotExist(os.ErrNotExist) && raw == nil {
-					raw = nil
-				}
 				body := string(raw)
 				section := util.SectionsByOwner[tool]
 				if section != "" && strings.Contains(body, section) {
@@ -98,8 +122,6 @@ func TestUnifiedBody_PerToolUnwire(t *testing.T) {
 	}
 }
 
-// TestUnifiedBody_StripsLegacyFences seeds a file with pre-unification
-// fences and verifies they are removed when an owner rewrites the body.
 func TestUnifiedBody_StripsLegacyFences(t *testing.T) {
 	setupHome(t)
 	path := filepath.Join(util.Home(), ".codex", "AGENTS.md")
@@ -118,11 +140,31 @@ func TestUnifiedBody_StripsLegacyFences(t *testing.T) {
 			t.Errorf("legacy fence %q not stripped:\n%s", marker, body)
 		}
 	}
-	if !strings.Contains(body, "## Talking (caveman) →") {
-		t.Errorf("unified Talking section missing:\n%s", body)
+	if !strings.Contains(body, "## Response Style (caveman)") {
+		t.Errorf("unified Voice section missing:\n%s", body)
 	}
 	if !strings.Contains(body, "# User notes") {
 		t.Errorf("user notes lost:\n%s", body)
+	}
+}
+
+func TestUnifiedBody_AcceptsLegacyArrowHeadings(t *testing.T) {
+	setupHome(t)
+	path := filepath.Join(util.Home(), ".codex", "AGENTS.md")
+	_ = util.EnsureDir(filepath.Dir(path))
+	_ = util.WriteFile(path, "# User notes\n\n## Style\nold body\n")
+
+	WriteOwner("codex", "context-mode")
+	after, _ := os.ReadFile(path)
+	body := string(after)
+	if strings.Count(body, "## Response Style (caveman)") != 1 {
+		t.Fatalf("legacy heading duplicated:\n%s", body)
+	}
+	if strings.Contains(body, "## Style") {
+		t.Fatalf("legacy arrow heading kept:\n%s", body)
+	}
+	if !strings.Contains(body, "## Context Tools (context-mode)") {
+		t.Fatalf("new owner missing:\n%s", body)
 	}
 }
 

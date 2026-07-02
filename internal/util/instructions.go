@@ -1,6 +1,7 @@
 package util
 
 import (
+	_ "embed"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -8,8 +9,7 @@ import (
 	"time"
 )
 
-// McpInstructions probes an MCP server via the JSON-RPC initialize handshake
-// and returns the result.instructions field.
+// McpInstructions probes an MCP server and returns result.instructions.
 func McpInstructions(spawn McpSpawn) (string, bool) {
 	if os.Getenv("TOKLESS_TEST") == "1" {
 		return "", false
@@ -75,13 +75,133 @@ func McpInstructions(spawn McpSpawn) (string, bool) {
 	}
 }
 
-const (
-	CodegraphMarkerStart = "<!-- CODEGRAPH_START -->"
-	CodegraphMarkerEnd   = "<!-- CODEGRAPH_END -->"
-)
+// ToklessOwners is render order: meta rules first, then tools.
+var ToklessOwners = []string{
+	"principles",
+	"caveman",
+	"ponytail",
+	"codegraph",
+	"context-mode",
+}
 
-const CodegraphAgentBlock = "## CodeGraph\n\n" +
-	"In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the repo root), reach for it BEFORE grep/find or reading files when you need to understand or locate code:\n\n" +
-	"- **MCP tool** (when available): `codegraph_explore` answers most code questions in one call — the relevant symbols' verbatim source plus the call paths between them, including dynamic-dispatch hops grep can't follow. Name a file or symbol in the query to read its current line-numbered source. If it's listed but deferred, load it by name via tool search.\n" +
-	"- **Shell** (always works): `codegraph explore \"<symbol names or question>\"` prints the same output.\n\n" +
-	"If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision."
+// SectionsByOwner maps each owner to its heading marker.
+var SectionsByOwner = map[string]string{
+	"principles":   "## Principles",
+	"caveman":      "## Response Style (caveman)",
+	"ponytail":     "## Build Discipline (ponytail)",
+	"codegraph":    "## Code Index (codegraph)",
+	"context-mode": "## Context Tools (context-mode)",
+}
+
+var legacySectionsByOwner = map[string][]string{
+	"principles":   {"## 1. Principles", "## Principles (craft) →", "## Principles (craft)"},
+	"caveman":      {"## 2. Response Style", "## Response Style", "## Style", "## Caveman Style", "## Caveman", "## Voice (caveman)", "## Response Style (caveman)"},
+	"ponytail":     {"## 3. Build Discipline", "## Build Discipline", "## Build Less", "## Ponytail", "## Ponytail: Build Less", "## Reuse Ladder (ponytail)", "## Lazy Ladder (ponytail)", "## Build Discipline (ponytail)"},
+	"codegraph":    {"## 4. Code Search", "## Codegraph", "## Codegraph — MUST USE FOR CODE", "## Code Index (codegraph)"},
+	"context-mode": {"## 5. Context Control", "## Context Tools", "## Context Tools — MUST USE FOR DATA", "## Context Tools (context-mode)"},
+}
+
+func SectionPresent(body, owner string) bool {
+	for _, marker := range SectionMarkers(owner) {
+		if strings.Contains(body, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func SectionMarkers(owner string) []string {
+	marker, ok := SectionsByOwner[owner]
+	if !ok {
+		return nil
+	}
+	markers := []string{marker}
+	markers = append(markers, legacySectionsByOwner[owner]...)
+	return markers
+}
+
+//go:embed agent_instructions.md
+var agentInstructionsTemplate string
+
+func instructionIndexSection() string {
+	body := strings.TrimRight(agentInstructionsTemplate, "\n")
+	idx := strings.Index(body, "\n## ")
+	if idx < 0 {
+		return body
+	}
+	return body[:idx]
+}
+
+func instructionSection(owner string) string {
+	marker := SectionsByOwner[owner]
+	if marker == "" {
+		return ""
+	}
+	body := strings.TrimRight(agentInstructionsTemplate, "\n")
+	start := strings.Index(body, marker)
+	if start < 0 {
+		return ""
+	}
+	if start > 0 {
+		start = strings.LastIndex(body[:start], "\n") + 1
+	}
+	rest := body[start:]
+	if idx := strings.Index(rest[1:], "\n## "); idx >= 0 {
+		return strings.TrimRight(rest[:idx+1], "\n")
+	}
+	return strings.TrimRight(rest, "\n")
+}
+
+// ToklessAgentBody renders the full markdown body for the given owners.
+func ToklessAgentBody(owners []string) string {
+	var b strings.Builder
+
+	if len(owners) >= 2 {
+		b.WriteString(instructionIndexSection())
+		b.WriteString("\n\n")
+	}
+	if len(owners) > 0 {
+		b.WriteString(instructionSection("principles"))
+		b.WriteString("\n\n")
+	}
+	if hasOwner(owners, "caveman") {
+		b.WriteString(instructionSection("caveman"))
+		b.WriteString("\n\n")
+	}
+	if hasOwner(owners, "ponytail") {
+		b.WriteString(instructionSection("ponytail"))
+		b.WriteString("\n\n")
+	}
+	if hasOwner(owners, "codegraph") {
+		b.WriteString(instructionSection("codegraph"))
+		b.WriteString("\n\n")
+	}
+	if hasOwner(owners, "context-mode") {
+		b.WriteString(instructionSection("context-mode"))
+		b.WriteString("\n\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// ToklessBody returns the rendered body. Convenience over ToklessAgentBody.
+func ToklessBody(owners []string) string { return ToklessAgentBody(owners) }
+
+// TokenizeBody infers active owners from section headings present in body.
+func TokenizeBody(body string) []string {
+	var out []string
+	for _, owner := range ToklessOwners {
+		if SectionPresent(body, owner) {
+			out = append(out, owner)
+		}
+	}
+	return out
+}
+
+func hasOwner(owners []string, want string) bool {
+	for _, o := range owners {
+		if o == want {
+			return true
+		}
+	}
+	return false
+}

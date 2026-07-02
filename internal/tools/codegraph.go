@@ -173,6 +173,7 @@ func codegraphWire(agent string) core.AgentFn {
 	return func(opts core.RunOpts) (bool, error) {
 		if isTest() {
 			codegraphConfigureMcp(agent)
+			WriteOwner(agent, "codegraph")
 			if agent == "antigravity" {
 				agents.InstallAntigravityCodegraphIndexHook()
 				agents.InstallAntigravityCodegraphToolDefs()
@@ -198,96 +199,10 @@ func codegraphWire(agent string) core.AgentFn {
 	}
 }
 
-// writeCodegraphBlock strips any existing CODEGRAPH_START/END block from the
-// agent's instructions file and inserts the canonical block at the position
-// defined by the order: caveman → codegraph → CONTEXT-MODE.
+// writeCodegraphBlock writes the unified TOKLESS block with codegraph as one
+// of its owners.
 func writeCodegraphBlock(agent string) bool {
-	var path string
-	switch agent {
-	case "claude":
-		path = util.ClaudeCodePaths().Instructions
-	case "opencode":
-		path = util.OpenCodePathsResolved().Instructions
-	case "codex":
-		path = util.CodexPathsResolved().Instructions
-	case "antigravity":
-		path = util.AntigravityPathsResolved().Instructions
-	default:
-		return false
-	}
-
-	const block = util.CodegraphMarkerStart + "\n" + util.CodegraphAgentBlock + "\n" + util.CodegraphMarkerEnd
-
-	raw, ok := util.ReadFileSafe(path)
-	if !ok {
-		_ = util.EnsureDir(filepath.Dir(path))
-		return util.WriteFile(path, block+"\n") == nil
-	}
-
-	for {
-		oi := strings.Index(raw, util.CodegraphMarkerStart)
-		if oi < 0 {
-			break
-		}
-		ci := strings.Index(raw[oi:], util.CodegraphMarkerEnd)
-		if ci < 0 {
-			break
-		}
-		end := oi + ci + len(util.CodegraphMarkerEnd)
-		if oi > 0 && raw[oi-1] == '\n' {
-			oi--
-		}
-		for end < len(raw) && raw[end] == '\n' {
-			end++
-			if end-oi > len(util.CodegraphMarkerStart)+len(util.CodegraphAgentBlock)+len(util.CodegraphMarkerEnd)+8 {
-				break
-			}
-		}
-		raw = raw[:oi] + raw[end:]
-	}
-
-	insertAt := -1
-	if i := strings.Index(raw, "<!-- caveman-end -->"); i >= 0 {
-		j := i + len("<!-- caveman-end -->")
-		for j < len(raw) && raw[j] == '\n' {
-			j++
-		}
-		insertAt = j
-	} else if i := strings.Index(raw, "<!-- CONTEXT-MODE_START -->"); i >= 0 {
-		if i > 0 {
-			k := i
-			for k > 0 && raw[k-1] == '\n' {
-				k--
-			}
-			insertAt = k
-		}
-	}
-	if insertAt < 0 {
-		sep := "\n\n"
-		if !strings.HasSuffix(raw, "\n") {
-			sep = "\n\n"
-		} else if strings.HasSuffix(raw, "\n\n") {
-			sep = ""
-		}
-		next := strings.TrimRight(raw, "\n") + sep + block + "\n"
-		if next == raw {
-			return false
-		}
-		return util.WriteFile(path, next) == nil
-	}
-
-	var next string
-	if insertAt > 0 && raw[insertAt-1] != '\n' {
-		next = raw[:insertAt] + "\n" + block + "\n\n" + raw[insertAt:]
-	} else if insertAt > 0 && raw[insertAt-1] == '\n' {
-		next = raw[:insertAt] + block + "\n\n" + raw[insertAt:]
-	} else {
-		next = block + "\n\n" + raw[insertAt:]
-	}
-	if next == raw {
-		return false
-	}
-	return util.WriteFile(path, next) == nil
+	return WriteOwner(agent, "codegraph")
 }
 
 func unwireAutoIndex(agent string) {
@@ -324,11 +239,13 @@ var codegraph = &core.ToolManifest{
 		"claude": func(core.RunOpts) (bool, error) {
 			agents.RemoveClaudeMcp("codegraph")
 			unwireAutoIndex("claude")
+			RemoveOwner("claude", "codegraph")
 			return true, nil
 		},
 		"opencode": func(core.RunOpts) (bool, error) {
 			agents.RemoveOpenCodeMcp("codegraph")
 			unwireAutoIndex("opencode")
+			RemoveOwner("opencode", "codegraph")
 			return true, nil
 		},
 		"codex": func(core.RunOpts) (bool, error) {
@@ -341,6 +258,7 @@ var codegraph = &core.ToolManifest{
 				}
 			}
 			unwireAutoIndex("codex")
+			RemoveOwner("codex", "codegraph")
 			return true, nil
 		},
 		"antigravity": func(core.RunOpts) (bool, error) {
@@ -348,6 +266,7 @@ var codegraph = &core.ToolManifest{
 			unwireAutoIndex("antigravity")
 			agents.CleanupDeadIdeHooks()
 			agents.RemoveAntigravityCodegraphToolDefs()
+			RemoveOwner("antigravity", "codegraph")
 			return true, nil
 		},
 	},

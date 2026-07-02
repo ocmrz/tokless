@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 func stdoutIsTTY() bool { return isTerminal(os.Stdout.Fd()) }
@@ -86,6 +87,8 @@ func pick(uni, ascii string) string {
 	}
 	return ascii
 }
+
+func Rule(width int) string { return strings.Repeat(pick("─", "-"), width) }
 
 var Sym = Symbols{
 	Bullet:     pick("•", "*"),
