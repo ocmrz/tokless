@@ -22,7 +22,7 @@ func RunMcp(argv []string) int {
 	if strings.Contains(argv[0], string(filepath.Separator)) {
 		util.PrependProcessPath(filepath.Dir(argv[0]))
 	}
-	if isCodegraphCommand(argv[0]) && !util.CodegraphBinaryHealthy(argv[0]) {
+	if isCodegraphCommand(argv[0]) && !strings.Contains(argv[0], string(filepath.Separator)) && !util.CodegraphBinaryHealthy(argv[0]) {
 		if p := util.ResolveCodegraphBin(); p != "" {
 			argv[0] = p
 		}

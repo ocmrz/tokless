@@ -116,7 +116,10 @@ func CodegraphBinaryHealthy(p string) bool {
 		codegraphHealthMu.Unlock()
 	}
 	cmd, args := codegraphProbeCommand(p)
-	ok := CodegraphSpawnHealthy(cmd, args)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	version := Run(cmd, append(append([]string{}, args...), "--version"), RunOptions{Capture: true, Ctx: ctx})
+	ok := version.Code == 0 && semverLike.MatchString(version.Stdout)
 	if err == nil {
 		codegraphHealthMu.Lock()
 		codegraphHealth[p] = codegraphHealthEntry{size: info.Size(), mod: info.ModTime().UnixNano(), ok: ok}
@@ -199,7 +202,6 @@ func codegraphMcpToolsHealthyMode(command string, prefixArgs []string, framed bo
 		}
 		return false
 	}
-	return false
 }
 
 func writeMcpProbeRequest(w io.Writer, req map[string]any, framed bool) error {

@@ -9,11 +9,14 @@ import (
 	"github.com/HoangP8/tokless/internal/util"
 )
 
-// antigravityMcpFiles returns every MCP config surface agy reads.
-func antigravityMcpFiles() []string {
+func antigravityMcpConfigFile() string {
+	return util.AntigravityPathsResolved().McpConfigCLI
+}
+
+func antigravityLegacyMcpFiles() []string {
 	p := util.AntigravityPathsResolved()
-	files := []string{p.McpConfig, p.McpConfigCLI, p.Settings}
 	gemini := filepath.Join(util.Home(), ".gemini")
+	files := []string{p.McpConfig, p.Settings, filepath.Join(gemini, "antigravity-cli", "mcp_config.json")}
 	for _, variant := range []string{"antigravity-ide"} {
 		if d := filepath.Join(gemini, variant); util.Exists(d) {
 			files = append(files, filepath.Join(d, "mcp_config.json"))
@@ -411,50 +414,23 @@ func filterContextModeHookEntries(arr []interface{}) []interface{} {
 	return kept
 }
 
-// InstallAntigravityCodegraphToolDefs writes static codegraph MCP tool definitions
-// to the agy MCP directory used by the CLI variant.
-func InstallAntigravityCodegraphToolDefs() {
-	gemini := filepath.Join(util.Home(), ".gemini")
-	for _, variant := range []string{"antigravity-cli", "antigravity-ide"} {
-		if !util.Exists(filepath.Join(gemini, variant)) {
-			continue
-		}
-		toolDir := filepath.Join(gemini, variant, "mcp", "codegraph")
-		_ = util.EnsureDir(toolDir)
-		for _, td := range codegraphToolDefs {
-			_ = util.WriteFile(filepath.Join(toolDir, td.name+".json"), td.json)
-		}
-	}
+var codegraphToolDefFiles = []string{
+	"codegraph_explore.json",
+	"codegraph_node.json",
+	"codegraph_search.json",
+	"codegraph_callers.json",
+	"instructions.md",
 }
-
-type codegraphToolDef struct {
-	name string
-	json string
-}
-
-var codegraphToolDefs = []codegraphToolDef{
-	{"codegraph_explore", codegraphExploreJSON},
-	{"codegraph_node", codegraphNodeJSON},
-	{"codegraph_search", codegraphSearchJSON},
-	{"codegraph_callers", codegraphCallersJSON},
-}
-
-const codegraphExploreJSON = `{"name":"codegraph_explore","description":"PRIMARY TOOL \u2014 call FIRST for almost any question OR before an edit: how does X work, architecture, a bug, where/what is X, surveying an area, or the symbols you are about to change. Returns the verbatim source of the relevant symbols grouped by file in ONE capped call (Read-equivalent \u2014 treat the shown source as already Read; do NOT re-open those files), plus the call path among them. Query can be a natural-language question OR a bag of symbol/file names. Usually the ONLY call you need \u2014 more accurate context, in far fewer tokens and round-trips than a search/Read/Grep loop.","inputSchema":{"type":"object","properties":{"query":{"type":"string","description":"Symbol names, file names, or short code terms to explore (e.g., \"AuthService loginUser session-manager\", \"GraphTraverser BFS impact traversal.ts\"). For a flow question, name the symbols spanning the flow (e.g. \"mutateElement renderScene\"). A natural-language question works too \u2014 no prior codegraph_search needed."},"maxFiles":{"type":"number","description":"Maximum number of files to include source code from (default: 12)","default":12},"projectPath":{"type":"string","description":"Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."}},"required":["query"]}}`
-
-const codegraphNodeJSON = `{"name":"codegraph_node","description":"Two modes. (1) READ A FILE \u2014 use INSTEAD of the Read tool: pass file (a path or basename) with no symbol and it returns that file's current on-disk source with line numbers, exactly the shape Read gives you, narrowable with offset/limit just like Read \u2014 PLUS a one-line note of which files depend on it. Same bytes as Read, faster (served from the index), with the blast radius attached. Use it whenever you would Read a source file. (2) ONE SYMBOL you can name \u2014 its location, signature, verbatim source (includeCode=true) and caller/callee trail in one call, so before changing it you see what calls it and what your edit would break. For an AMBIGUOUS name it returns EVERY matching definition's body in one call (so you never Read a file to find the right overload); pass file/line to pin one. Use codegraph_explore for several related symbols or the full flow.","inputSchema":{"type":"object","properties":{"symbol":{"type":"string","description":"Name of the symbol to read (symbol mode). Omit it and pass file alone to read a whole file like Read."},"includeCode":{"type":"boolean","description":"Symbol mode: include the symbol's full body (default: false). Ignored in file mode, which always returns source unless symbolsOnly is set.","default":false},"file":{"type":"string","description":"A file path or basename (e.g. \"harness.rs\", \"src/auth/session.ts\"). Pass it ALONE (no symbol) to READ the file like the Read tool \u2014 its full source with line numbers + which files depend on it. Or pass it WITH a symbol to disambiguate an overloaded name to the definition in this file."},"offset":{"type":"number","description":"File mode: 1-based line to start reading from, exactly like Read's offset. Defaults to the start of the file."},"limit":{"type":"number","description":"File mode: maximum number of lines to return, exactly like Read's limit. Defaults to the whole file (capped at 2000 lines, like Read)."},"symbolsOnly":{"type":"boolean","description":"File mode: return just the file's symbol map + dependents (a cheap structural overview) instead of its source.","default":false},"line":{"type":"number","description":"Symbol mode only: disambiguate to the definition at/around this line (use with the file:line a trail showed you)."},"projectPath":{"type":"string","description":"Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."}},"required":[]}}`
-
-const codegraphSearchJSON = `{"name":"codegraph_search","description":"Quick symbol search by name. Returns locations only (no code). Use codegraph_explore instead to get the actual source / understand an area in one call.","inputSchema":{"type":"object","properties":{"query":{"type":"string","description":"Symbol name or partial name (e.g., \"auth\", \"signIn\", \"UserService\")"},"kind":{"type":"string","description":"Filter by node kind","enum":["function","method","class","interface","type","variable","route","component"]},"limit":{"type":"number","description":"Maximum results (default: 10)","default":10},"projectPath":{"type":"string","description":"Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."}},"required":["query"]}}`
-
-const codegraphCallersJSON = `{"name":"codegraph_callers","description":"List functions that call <symbol>. For the full flow, use codegraph_explore.","inputSchema":{"type":"object","properties":{"symbol":{"type":"string","description":"Name of the function, method, or class to find callers for"},"file":{"type":"string","description":"Narrow to the definition in this file (path or suffix) when several same-named symbols exist (e.g. one UserService per app in a monorepo)"},"limit":{"type":"number","description":"Maximum number of callers to return (default: 20)","default":20},"projectPath":{"type":"string","description":"Path to a different project with .codegraph/ initialized. If omitted, uses current project. Use this to query other codebases."}},"required":["symbol"]}}`
 
 // RemoveAntigravityCodegraphToolDefs deletes the static codegraph tool definitions.
 func RemoveAntigravityCodegraphToolDefs() {
 	gemini := filepath.Join(util.Home(), ".gemini")
 	for _, variant := range []string{"antigravity-cli", "antigravity-ide"} {
 		toolDir := filepath.Join(gemini, variant, "mcp", "codegraph")
-		for _, td := range codegraphToolDefs {
-			_ = os.Remove(filepath.Join(toolDir, td.name+".json"))
+		for _, file := range codegraphToolDefFiles {
+			_ = os.Remove(filepath.Join(toolDir, file))
 		}
+		_ = os.Remove(toolDir)
 	}
 }
 
@@ -676,7 +652,7 @@ func RemoveAntigravityEntry(entry string) {
 	}
 }
 
-// ConfigureAntigravityMcp upserts mcpServers.<tool> into every surface's MCP config.
+// ConfigureAntigravityMcp upserts mcpServers.<tool> into agy's canonical MCP config.
 func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 	var spawn util.McpSpawn
 	if toolID == "codegraph" {
@@ -689,54 +665,51 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 	} else {
 		spawn = util.PickMcpSpawn(toolID)
 	}
-	AllowAntigravityEntry("mcp(" + toolID + "/*)")
-	for _, f := range antigravityMcpFiles() {
-		_ = util.EnsureDir(filepath.Dir(f))
-		raw, _ := util.ReadFileSafe(f)
-		cfg := util.TryParseJsonc(raw)
-		if cfg == nil {
-			cfg = util.NewOrderedMap()
-		}
-		servers := getOrCreateMap(cfg, "mcpServers")
-		entry := util.NewOrderedMap()
-		entry.Set("command", spawn.Command)
-		if len(spawn.Args) > 0 {
-			entry.Set("args", spawn.Args)
-		}
-		entry.Set("trust", true)
-		servers.Set(toolID, entry)
-		if next := util.StringifyJSON(cfg); next != raw {
-			_ = util.WriteFile(f, next)
-			changed = true
-			file = f
-		}
+	f := antigravityMcpConfigFile()
+	_ = util.EnsureDir(filepath.Dir(f))
+	raw, _ := util.ReadFileSafe(f)
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		cfg = util.NewOrderedMap()
 	}
+	servers := getOrCreateMap(cfg, "mcpServers")
+	entry := util.NewOrderedMap()
+	entry.Set("command", spawn.Command)
+	if len(spawn.Args) > 0 {
+		entry.Set("args", spawn.Args)
+	}
+	entry.Set("trust", true)
+	servers.Set(toolID, entry)
+	if next := util.StringifyJSON(cfg); next != raw {
+		_ = util.WriteFile(f, next)
+		changed = true
+		file = f
+	}
+	removeAntigravityMcpFromFiles(toolID, antigravityLegacyMcpFiles())
 	AllowAntigravityEntry("mcp(" + toolID + "/*)")
+	if toolID == "codegraph" {
+		RemoveAntigravityCodegraphToolDefs()
+	}
 	return changed, file
 }
 
-// AntigravityMcpHas reports whether every surface's MCP config registers the tool.
+// AntigravityMcpHas reports whether agy's canonical MCP config registers the tool.
 func AntigravityMcpHas(toolID string) bool {
-	for _, f := range antigravityMcpFiles() {
-		raw, ok := util.ReadFileSafe(f)
-		if !ok {
-			return false
-		}
-		cfg := util.TryParseJsonc(raw)
-		if cfg == nil {
-			return false
-		}
-		found := false
-		if s, ok := cfg.Get("mcpServers"); ok {
-			if sm, ok := s.(*util.OrderedMap); ok {
-				_, found = sm.Get(toolID)
-			}
-		}
-		if !found {
-			return false
+	raw, ok := util.ReadFileSafe(antigravityMcpConfigFile())
+	if !ok {
+		return false
+	}
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return false
+	}
+	if s, ok := cfg.Get("mcpServers"); ok {
+		if sm, ok := s.(*util.OrderedMap); ok {
+			_, found := sm.Get(toolID)
+			return found
 		}
 	}
-	return true
+	return false
 }
 
 func agyKnownBinDirs() []string {
@@ -877,9 +850,16 @@ var antigravity = &core.AgentManifest{
 	},
 }
 
-// RemoveAntigravityMcp deletes mcpServers.<tool> from every surface's MCP config.
+// RemoveAntigravityMcp deletes mcpServers.<tool> from canonical and legacy MCP config surfaces.
 func RemoveAntigravityMcp(toolID string) {
-	for _, f := range antigravityMcpFiles() {
+	files := append([]string{antigravityMcpConfigFile()}, antigravityLegacyMcpFiles()...)
+	removeAntigravityMcpFromFiles(toolID, files)
+	RemoveAntigravityEntry("mcp(" + toolID + "/*)")
+}
+
+func removeAntigravityMcpFromFiles(toolID string, files []string) {
+	entry := "mcp(" + toolID + "/*)"
+	for _, f := range files {
 		raw, ok := util.ReadFileSafe(f)
 		if !ok {
 			continue
@@ -896,6 +876,29 @@ func RemoveAntigravityMcp(toolID string) {
 				}
 			}
 		}
+		if p, ok := cfg.Get("permissions"); ok {
+			if pm, ok := p.(*util.OrderedMap); ok {
+				if v, ok := pm.Get("allow"); ok {
+					if arr, ok := v.([]any); ok {
+						out := make([]any, 0, len(arr))
+						for _, e := range arr {
+							if s, ok := e.(string); ok && s == entry {
+								continue
+							}
+							out = append(out, e)
+						}
+						if len(out) == 0 {
+							pm.Delete("allow")
+						} else {
+							pm.Set("allow", out)
+						}
+						if pm.Len() == 0 {
+							cfg.Delete("permissions")
+						}
+						_ = util.WriteFile(f, util.StringifyJSON(cfg))
+					}
+				}
+			}
+		}
 	}
-	RemoveAntigravityEntry("mcp(" + toolID + "/*)")
 }

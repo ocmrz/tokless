@@ -147,19 +147,18 @@ func codegraphIndexProject(dir string, opts core.RunOpts) (bool, error) {
 		util.L.Sub("[dry-run] would run codegraph in " + dir)
 		return true, nil
 	}
-	hasIndex := util.Exists(filepath.Join(dir, ".codegraph"))
-	var res util.ExecResult
-	if hasIndex {
-		res = util.Run(bin, []string{"sync"}, util.RunOptions{Cwd: dir, Capture: true})
-		if res.Code == 0 {
-			return true, nil
-		}
+	go codegraphSyncBackground(bin, dir)
+	return true, nil
+}
+
+func codegraphSyncBackground(bin, dir string) {
+	if util.Exists(filepath.Join(dir, ".codegraph")) {
+		_ = util.Run(bin, []string{"sync"}, util.RunOptions{Cwd: dir, Quiet: true})
+		return
 	}
-	res = util.Run(bin, []string{"init", "-i"}, util.RunOptions{Cwd: dir, Capture: true})
-	if res.Code != 0 {
-		res = util.Run(bin, []string{"init"}, util.RunOptions{Cwd: dir, Capture: true})
+	if util.Run(bin, []string{"init", "-i"}, util.RunOptions{Cwd: dir, Quiet: true}).Code != 0 {
+		_ = util.Run(bin, []string{"init"}, util.RunOptions{Cwd: dir, Quiet: true})
 	}
-	return res.Code == 0, nil
 }
 
 func codegraphWire(agent string) core.AgentFn {
@@ -169,7 +168,7 @@ func codegraphWire(agent string) core.AgentFn {
 			WriteOwner(agent, "codegraph")
 			if agent == "antigravity" {
 				agents.InstallAntigravityCodegraphIndexHook()
-				agents.InstallAntigravityCodegraphToolDefs()
+				agents.RemoveAntigravityCodegraphToolDefs()
 				agents.CleanupDeadIdeHooks()
 			}
 			return codegraphVerify(agent), nil
@@ -185,7 +184,7 @@ func codegraphWire(agent string) core.AgentFn {
 		unwireAutoIndex(agent)
 		if agent == "antigravity" {
 			agents.InstallAntigravityCodegraphIndexHook()
-			agents.InstallAntigravityCodegraphToolDefs()
+			agents.RemoveAntigravityCodegraphToolDefs()
 			agents.CleanupDeadIdeHooks()
 		}
 		return codegraphVerify(agent), nil
