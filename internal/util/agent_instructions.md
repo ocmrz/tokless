@@ -123,17 +123,17 @@ Prebuilt code index. `codegraph_explore` gives source, call path, and blast radi
 
 ```
 .codegraph/ index exists?
-├─ YES → codegraph_explore first for multi-file or cross-file questions.
-│        ├─ Use Codegraph when: how does X work, flow A→B, architecture,
-│        │   who calls Y, blast radius before edit, subsystem structure,
-│        │   or where is X defined if multiple candidates may exist.
-│        ├─ Skip Codegraph for: known single-file questions, docs/config/
-│        │   generated data, simple one-symbol lookups. Grep/Read fine for
-│        │   gaps codegraph missed or non-code (configs, docs).
-│        └─ Trust Codegraph results — full AST parse, safe to edit from.
-│           Don't re-grep what it returned (one call beats dozens of grep+Read).
-│           Staleness banner = re-read flagged files only.
-│           "auto-sync DISABLED" = index frozen → Read directly.
+├─ YES → codegraph_explore FIRST. Always. Source + blast radius + call path
+│        in ONE call.
+│        ├─ Use for: how does X work, flow A→B, architecture, who calls Y,
+│        │   blast radius, subsystem structure, where is X, reading a file.
+│        ├─ grep/search/read ONLY for non-code codegraph doesn't index
+│        │   (configs, docs, .env) — AFTER codegraph narrows it down,
+│        │   never as the first move.
+│        └─ Trust results — full AST parse, safe to edit from. NO re-grep,
+│           NO re-search, NO re-read of what codegraph returned. Spilled?
+│           grep the spill for the symbol you NEED — do NOT Read/View whole.
+│           ONE call beats dozens of grep+search+Read.
 └─ NO  → work normal (read / grep / ast_grep). Don't call codegraph.
 ```
 

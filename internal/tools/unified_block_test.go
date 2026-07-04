@@ -76,7 +76,7 @@ func TestUnifiedBody_WiresAllOwnersAcrossAllAgents(t *testing.T) {
 					t.Errorf("missing principle subheading %q:\n%s", want, body)
 				}
 			}
-			for _, want := range []string{"Use Codegraph when", "Skip Codegraph", "Trust Codegraph results", "blast radius"} {
+			for _, want := range []string{"codegraph_explore FIRST", "Trust results", "blast radius", "NO re-grep"} {
 				if !strings.Contains(body, want) {
 					t.Errorf("missing Codegraph instruction %q:\n%s", want, body)
 				}

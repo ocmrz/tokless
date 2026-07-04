@@ -151,6 +151,7 @@ func TestConfigureAntigravityMcpMergeAndRemove(t *testing.T) {
 	p := util.AntigravityPathsResolved()
 	_ = os.MkdirAll(p.Dir, 0o755)
 	_ = os.WriteFile(p.McpConfig, []byte(`{"mcpServers":{"user-server":{"command":"keepme"}}}`), 0o644)
+	_ = os.WriteFile(p.Settings, []byte(`{"mcpServers":{"codegraph":{"command":"old"}},"permissions":{"allow":["mcp(codegraph/*)"]}}`), 0o644)
 
 	changed, _ := ConfigureAntigravityMcp("codegraph")
 	if !changed {
@@ -161,8 +162,8 @@ func TestConfigureAntigravityMcpMergeAndRemove(t *testing.T) {
 	}
 	ConfigureAntigravityMcp("context-mode")
 
-	raw, _ := os.ReadFile(p.McpConfig)
-	for _, want := range []string{`"user-server"`, `"keepme"`, `"codegraph"`, `"serve"`, `"--mcp"`, `"context-mode"`} {
+	raw, _ := os.ReadFile(p.McpConfigCLI)
+	for _, want := range []string{`"codegraph"`, `"serve"`, `"--mcp"`, `"context-mode"`} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("mcp_config.json missing %s:\n%s", want, raw)
 		}
@@ -171,28 +172,72 @@ func TestConfigureAntigravityMcpMergeAndRemove(t *testing.T) {
 		t.Fatal("AntigravityMcpHas should see both tools")
 	}
 
-	// CLI surface file must carry the same servers (agy reads config/, not antigravity/).
-	rawCLI, err := os.ReadFile(p.McpConfigCLI)
-	if err != nil {
-		t.Fatalf("CLI mcp config not written: %v", err)
+	rawLegacy, _ := os.ReadFile(p.McpConfig)
+	if !strings.Contains(string(rawLegacy), `"user-server"`) || !strings.Contains(string(rawLegacy), `"keepme"`) || strings.Contains(string(rawLegacy), `"codegraph"`) {
+		t.Fatalf("legacy config not preserved/cleaned:\n%s", rawLegacy)
 	}
-	if !strings.Contains(string(rawCLI), `"codegraph"`) || !strings.Contains(string(rawCLI), `"context-mode"`) {
-		t.Fatalf("CLI mcp config missing tools:\n%s", rawCLI)
+	rawLegacySettings, _ := os.ReadFile(p.Settings)
+	if strings.Contains(string(rawLegacySettings), `"codegraph"`) || strings.Contains(string(rawLegacySettings), `mcp(codegraph/*)`) {
+		t.Fatalf("legacy settings should not contain codegraph:\n%s", rawLegacySettings)
+	}
+	rawCliSettings, _ := os.ReadFile(filepath.Join(home, ".gemini", "antigravity-cli", "settings.json"))
+	if !strings.Contains(string(rawCliSettings), `mcp(codegraph/*)`) {
+		t.Fatalf("CLI settings should allow codegraph MCP:\n%s", rawCliSettings)
 	}
 
 	RemoveAntigravityMcp("codegraph")
 	if AntigravityMcpHas("codegraph") {
 		t.Fatal("codegraph should be removed")
 	}
-	for _, f := range []string{p.McpConfig, p.McpConfigCLI} {
+	for _, f := range []string{p.McpConfig, p.McpConfigCLI, p.Settings} {
 		raw, _ = os.ReadFile(f)
 		if strings.Contains(string(raw), `"codegraph"`) {
 			t.Fatalf("codegraph not removed from %s", f)
 		}
 	}
 	raw, _ = os.ReadFile(p.McpConfig)
-	if !strings.Contains(string(raw), `"user-server"`) || !strings.Contains(string(raw), `"context-mode"`) {
+	if !strings.Contains(string(raw), `"user-server"`) {
 		t.Fatalf("remove clobbered unrelated entries:\n%s", raw)
+	}
+	raw, _ = os.ReadFile(p.McpConfigCLI)
+	if !strings.Contains(string(raw), `"context-mode"`) {
+		t.Fatalf("remove clobbered canonical entries:\n%s", raw)
+	}
+}
+
+func TestRemoveAntigravityCodegraphToolDefs(t *testing.T) {
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	defer util.SetHomeOverride("")
+
+	gemini := filepath.Join(home, ".gemini")
+	for _, variant := range []string{"antigravity-cli", "antigravity-ide"} {
+		toolDir := filepath.Join(gemini, variant, "mcp", "codegraph")
+		if err := os.MkdirAll(toolDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range codegraphToolDefFiles {
+			if err := os.WriteFile(filepath.Join(toolDir, file), []byte("{}"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(toolDir, "user.json"), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	RemoveAntigravityCodegraphToolDefs()
+
+	for _, variant := range []string{"antigravity-cli", "antigravity-ide"} {
+		toolDir := filepath.Join(gemini, variant, "mcp", "codegraph")
+		for _, file := range codegraphToolDefFiles {
+			if _, err := os.Stat(filepath.Join(toolDir, file)); !os.IsNotExist(err) {
+				t.Fatalf("%s still exists", filepath.Join(toolDir, file))
+			}
+		}
+		if _, err := os.Stat(filepath.Join(toolDir, "user.json")); err != nil {
+			t.Fatalf("unrelated file removed: %v", err)
+		}
 	}
 }
 

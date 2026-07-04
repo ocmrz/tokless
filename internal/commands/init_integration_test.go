@@ -182,8 +182,8 @@ func TestInitSandboxWiring(t *testing.T) {
 		t.Errorf("default.rules missing rtk prefix_rule, got: %s", rulesStr)
 	}
 
-	// 5. <home>/.gemini/antigravity/mcp_config.json contains both MCP tools
-	agyMcpPath := filepath.Join(tempdir, ".gemini", "antigravity", "mcp_config.json")
+	// 5. <home>/.gemini/config/mcp_config.json contains both MCP tools.
+	agyMcpPath := filepath.Join(tempdir, ".gemini", "config", "mcp_config.json")
 	agyMcpData, err := os.ReadFile(agyMcpPath)
 	if err != nil {
 		t.Fatalf("failed to read antigravity mcp_config.json: %v", err)
@@ -255,22 +255,10 @@ func TestInitSandboxWiring(t *testing.T) {
 		t.Errorf("antigravity mcp_config.json codegraph entry not wrapped with run-mcp, got: %s", agyMcpStr)
 	}
 
-	// 8. Antigravity IDE variant gets its own MCP config when ~/.gemini/antigravity-ide exists.
+	// 8. Antigravity uses one canonical MCP config, not per-surface duplicates.
 	agyIdeMcpPath := filepath.Join(tempdir, ".gemini", "antigravity-ide", "mcp_config.json")
-	if !util.Exists(agyIdeMcpPath) {
-		t.Errorf("antigravity-ide mcp_config.json was not created")
-	} else {
-		agyIdeMcpData, err := os.ReadFile(agyIdeMcpPath)
-		if err != nil {
-			t.Fatalf("failed to read antigravity-ide mcp_config.json: %v", err)
-		}
-		agyIdeMcpStr := string(agyIdeMcpData)
-		if !strings.Contains(agyIdeMcpStr, "codegraph") {
-			t.Errorf("antigravity-ide mcp_config.json missing 'codegraph', got: %s", agyIdeMcpStr)
-		}
-		if !strings.Contains(agyIdeMcpStr, "run-mcp") {
-			t.Errorf("antigravity-ide mcp_config.json codegraph not wrapped with run-mcp, got: %s", agyIdeMcpStr)
-		}
+	if util.Exists(agyIdeMcpPath) {
+		t.Errorf("antigravity-ide mcp_config.json should not be created")
 	}
 }
 
