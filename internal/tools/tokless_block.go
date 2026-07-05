@@ -142,7 +142,7 @@ func stripLegacyHeading(raw, heading string) string {
 
 // fileParts splits raw into head, managed sections, and tail.
 func fileParts(raw string) (head []string, blocks []managedSection, tail []string) {
-	lines := strings.Split(raw, "\n")
+	lines := strings.Split(strings.ReplaceAll(raw, "\r", ""), "\n")
 	ownerIdx := make([]int, 0)
 	for i, line := range lines {
 		if ownerOf(line) != "" {
@@ -193,6 +193,7 @@ func blocksFromLines(lines []string) []managedSection {
 
 // ownerOf returns owner id for a known heading.
 func ownerOf(line string) string {
+	line = strings.TrimRight(line, "\r")
 	for _, o := range util.ToklessOwners {
 		for _, marker := range util.SectionMarkers(o) {
 			if line == marker {
