@@ -48,23 +48,24 @@ type VerifyFn func() *bool
 
 // ToolManifest describes one tool and how it installs/wires per agent.
 type ToolManifest struct {
-	ID           string
-	Label        string
-	Description  string
-	Homepage     string
-	InstallHint  string
-	Channel      Channel
+	ID              string
+	Label           string
+	Description     string
+	Homepage        string
+	InstallHint     string
+	Channel         Channel
 	NotTrackable    bool
 	InstructionOnly bool
+	NeedsNode       bool
 	NeedsGit        bool
-	MinNodeMajor int
-	Install      func(opts RunOpts) (bool, error)
-	WireFor      map[string]AgentFn
-	UnwireFor    map[string]AgentFn
-	VerifyFor    map[string]VerifyFn
-	IndexProject func(dir string, opts RunOpts) (bool, error)
-	Indexed      func(dir string, opts RunOpts) bool
-	IndexReady   func() bool
+	MinNodeMajor    int
+	Install         func(opts RunOpts) (bool, error)
+	WireFor         map[string]AgentFn
+	UnwireFor       map[string]AgentFn
+	VerifyFor       map[string]VerifyFn
+	IndexProject    func(dir string, opts RunOpts) (bool, error)
+	Indexed         func(dir string, opts RunOpts) bool
+	IndexReady      func() bool
 }
 
 // registries are global and populated at startup by agents/tools packages.

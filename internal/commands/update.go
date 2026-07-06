@@ -113,16 +113,40 @@ func RunUpdate(opts InitOptions) int {
 	util.L.Raw("  " + util.C.Bold(util.C.Cyan("tokless")) + util.C.Gray("  global token-saver for AI agents"))
 
 	if !opts.DryRun {
-		needNode, minNode := false, 0
+		needNode, needGit, minNode := false, false, 0
 		for _, t := range core.ListTools() {
 			if contains(changed, t.ID) {
-				needNode = needNode || t.Channel == core.ChannelNpm
+				needNode = needNode || toolNeedsNode(t)
+				needGit = needGit || t.NeedsGit
 				if t.MinNodeMajor > minNode {
 					minNode = t.MinNodeMajor
 				}
 			}
 		}
-		util.EnsureDeps(needNode, false, minNode)
+		nodeOK, gitOK := util.EnsureDeps(needNode, needGit, minNode)
+		if !nodeOK || !gitOK {
+			var keep []string
+			for _, id := range changed {
+				tool := core.GetTool(id)
+				if tool == nil {
+					continue
+				}
+				if toolNeedsNode(tool) && !nodeOK {
+					continue
+				}
+				if tool.NeedsGit && !gitOK {
+					continue
+				}
+				keep = append(keep, id)
+			}
+			changed = keep
+		}
+		if len(changed) == 0 {
+			util.L.Raw("")
+			util.L.Err("Missing dependencies; nothing safe to update.")
+			util.L.Raw("")
+			return 1
+		}
 	}
 	allTools := core.ListTools()
 	var tools []*core.ToolManifest

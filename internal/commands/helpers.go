@@ -29,6 +29,10 @@ func toolVersionNote(tool *core.ToolManifest) string {
 	return ""
 }
 
+func toolNeedsNode(tool *core.ToolManifest) bool {
+	return tool.NeedsNode || tool.Channel == core.ChannelNpm || tool.MinNodeMajor > 0
+}
+
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i != -1 {
 		return s[:i]

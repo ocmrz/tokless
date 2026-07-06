@@ -30,7 +30,9 @@ func contains(ss []string, s string) bool {
 
 func RunInit(opts InitOptions) int {
 	util.SetQuiet(!opts.Verbose)
-	if os.Getenv("TOKLESS_INSTALLER_RUN") != "1" {
+	if os.Getenv("TOKLESS_INSTALLER_RUN") == "1" {
+		opts.Upgrade = true
+	} else {
 		MaybeSelfUpdate(opts)
 		util.L.Raw("")
 	}
@@ -50,7 +52,7 @@ func RunInit(opts InitOptions) int {
 	needNode, needGit := false, false
 	minNode := 0
 	for _, t := range tools {
-		needNode = needNode || t.Channel == core.ChannelNpm
+		needNode = needNode || toolNeedsNode(t)
 		needGit = needGit || t.NeedsGit
 		if t.MinNodeMajor > minNode {
 			minNode = t.MinNodeMajor
@@ -66,7 +68,7 @@ func RunInit(opts InitOptions) int {
 	installLogs := map[string]string{}
 	for _, tool := range tools {
 		toolBar.Begin(tool.Label)
-		if tool.Channel == core.ChannelNpm && !nodeOK {
+		if toolNeedsNode(tool) && !nodeOK {
 			toolBar.Fail("needs Node.js — https://nodejs.org/en/download")
 			continue
 		}
@@ -187,13 +189,18 @@ func RunInit(opts InitOptions) int {
 					continue
 				}
 				wireBar.Step("installing "+tool.Label, float64(ti+1)/float64(len(tools)))
+				if toolNeedsNode(tool) && !nodeOK {
+					util.L.Err(tool.Label + " needs Node.js/npm — https://nodejs.org/en/download")
+					failed = append(failed, tool.Label)
+					continue
+				}
 				if tool.NeedsGit && !gitOK {
 					util.L.Err(tool.Label + " needs git — https://git-scm.com/downloads")
 					failed = append(failed, tool.Label)
 					continue
 				}
 				okWire := false
-				if res, err := fn(core.RunOpts{DryRun: opts.DryRun}); err == nil {
+				if res, err := fn(core.RunOpts{DryRun: opts.DryRun, Upgrade: opts.Upgrade}); err == nil {
 					okWire = res
 				}
 				if okWire && !opts.DryRun && os.Getenv("TOKLESS_TEST") != "1" {
@@ -240,9 +247,6 @@ func RunInit(opts InitOptions) int {
 		printFailureDetail(map[string]string{core.GetAgent(id).Label: wireLogs[id]})
 	}
 	notifyOutdated(opts)
-	if os.Getenv("TOKLESS_INSTALLER_RUN") == "1" {
-		MaybeSelfUpdate(opts)
-	}
 	printRepoFooter()
 	util.L.Raw("")
 	if len(failures) > 0 {

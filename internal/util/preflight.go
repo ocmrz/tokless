@@ -34,10 +34,10 @@ func EnsureDeps(needNode, needGit bool, minNode int) (nodeOK, gitOK bool) {
 	}
 	var missing []string
 	if !nodeOK {
-		missing = append(missing, "Node.js (CodeGraph, Context-Mode)")
+		missing = append(missing, "Node.js/npm")
 	}
 	if !gitOK {
-		missing = append(missing, "git (Caveman)")
+		missing = append(missing, "git")
 	}
 	L.Warn("Missing: " + strings.Join(missing, ", "))
 	if !Confirm("Install now?", true) {

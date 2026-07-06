@@ -122,7 +122,7 @@ func runSelfUpdateTo(latest string) (bool, bool) {
 	defer stop()
 	if util.IsWin {
 		if shell := windowsPowerShell(); shell != "" {
-			r := util.Run(shell, []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "irm " + installPs1 + " | iex"}, util.RunOptions{Capture: true, Env: []string{"CI=1"}, Ctx: ctx})
+			r := util.Run(shell, []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "irm " + installPs1 + " | iex"}, util.RunOptions{Capture: false, Env: []string{"CI=1"}, Ctx: ctx})
 			if ctx.Err() != nil {
 				return false, true
 			}

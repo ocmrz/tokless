@@ -1,12 +1,12 @@
 package main
 
 import (
+	"github.com/HoangP8/tokless/internal/util"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"github.com/HoangP8/tokless/internal/util"
 )
 
 func TestHelpListsPonytailTool(t *testing.T) {
@@ -19,6 +19,38 @@ func TestHelpListsPonytailTool(t *testing.T) {
 	}
 	if strings.Contains(help, "principles") {
 		t.Fatalf("help still lists principles:\n%s", help)
+	}
+}
+
+func TestInstallerRunImpliesUpgrade(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, ".config"))
+	t.Setenv("TOKLESS_TEST", "1")
+	t.Setenv("TOKLESS_TEST_LATEST", "0.1.0")
+	t.Setenv("TOKLESS_INSTALLER_RUN", "1")
+	util.SetHomeOverride(tmp)
+	t.Cleanup(func() { util.SetHomeOverride("") })
+	oldVersion := util.Version
+	util.Version = "0.0.0"
+	t.Cleanup(func() { util.Version = oldVersion })
+	if err := os.MkdirAll(filepath.Join(tmp, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Installer run should skip self-update entirely because the installer just
+	// downloaded the latest binary.
+	out := captureStdout(t, func() int {
+		oldArgs := os.Args
+		os.Args = []string{"tokless", "--tools", "rtk", "--agents", "claude"}
+		defer func() { os.Args = oldArgs }()
+		return run()
+	})
+	if strings.Contains(out, "tokless v0.0.0 → v0.1.0 updated") || strings.Contains(out, "tokless updating") {
+		t.Fatalf("installer run should not self-update after installer downloaded latest binary:\n%s", out)
+	}
+	if strings.Contains(out, "global token-saver") {
+		t.Fatalf("installer run with Upgrade=true still skipped legacy rtk install:\n%s", out)
 	}
 }
 
@@ -55,33 +87,6 @@ func TestDefaultRunChecksAndUpdatesToklessInTestMode(t *testing.T) {
 	}
 	if strings.Index(out, "Tokless") > strings.Index(out, "Tools") {
 		t.Fatalf("self-update did not run before tool flow:\n%s", out)
-	}
-}
-
-func TestInstallerRunDefersToklessUpdateUntilEnd(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, ".config"))
-	t.Setenv("TOKLESS_TEST", "1")
-	t.Setenv("TOKLESS_TEST_LATEST", "0.1.0")
-	t.Setenv("TOKLESS_INSTALLER_RUN", "1")
-	util.SetHomeOverride(tmp)
-	t.Cleanup(func() { util.SetHomeOverride("") })
-	oldVersion := util.Version
-	util.Version = "0.0.0"
-	t.Cleanup(func() { util.Version = oldVersion })
-	if err := os.MkdirAll(filepath.Join(tmp, ".claude"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	out := captureStdout(t, func() int {
-		oldArgs := os.Args
-		os.Args = []string{"tokless", "--tools", "rtk", "--agents", "claude"}
-		defer func() { os.Args = oldArgs }()
-		return run()
-	})
-	if strings.Index(out, "Equipped Claude Code") > strings.Index(out, "tokless v0.0.0 → v0.1.0 updated") {
-		t.Fatalf("installer run moved self-update before agent flow:\n%s", out)
 	}
 }
 
