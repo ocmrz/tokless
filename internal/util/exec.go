@@ -27,11 +27,9 @@ type RunOptions struct {
 
 // Run executes a command; Capture pipes stdio, Quiet discards it, else inherit.
 func Run(cmd string, args []string, opts RunOptions) ExecResult {
-	var c *exec.Cmd
+	c := exec.Command(cmd, args...)
 	if opts.Ctx != nil {
-		c = exec.CommandContext(opts.Ctx, cmd, args...)
-	} else {
-		c = exec.Command(cmd, args...)
+		prepareCommandForTreeKill(c)
 	}
 	if opts.Cwd != "" {
 		c.Dir = opts.Cwd
@@ -50,7 +48,7 @@ func Run(cmd string, args []string, opts RunOptions) ExecResult {
 		c.Stderr = os.Stderr
 		c.Stdin = os.Stdin
 	}
-	err := c.Run()
+	err := runCmd(c, opts.Ctx)
 	res := ExecResult{Stdout: outBuf.String(), Stderr: errBuf.String()}
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -64,6 +62,24 @@ func Run(cmd string, args []string, opts RunOptions) ExecResult {
 	}
 	res.Code = 0
 	return res
+}
+
+func runCmd(c *exec.Cmd, ctx context.Context) error {
+	if ctx == nil {
+		return c.Run()
+	}
+	if err := c.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		killProcessTree(c)
+		return <-done
+	}
 }
 
 // Which finds an executable on PATH, honoring PATHEXT on Windows.
