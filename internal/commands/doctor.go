@@ -58,7 +58,7 @@ func RunDoctor(offline bool) int {
 		} else {
 			util.L.Raw("")
 		}
-		listToolVersions(tools, v)
+		listToolVersions(tools, v, false)
 		util.L.Raw("")
 		if outdated > 0 {
 			util.L.Warn(plural(outdated) + " available — run " + util.C.Cyan("tokless update"))
@@ -77,7 +77,7 @@ func RunDoctor(offline bool) int {
 		util.L.Raw("")
 		util.L.Info("Run " + util.C.Cyan("tokless") + " to fix.")
 	}
-	printRepoFooter()
+	printRepoFooter(false)
 	util.L.Raw("")
 	return 0
 }
@@ -98,30 +98,50 @@ func doctorSummary(r agentReport) {
 	util.L.Raw("  " + mark + " " + padEnd(r.label, 14) + " " + status)
 }
 
+func toolVersionOutdated(tool *core.ToolManifest, info util.VersionInfo) bool {
+	if tool.InstructionOnly || tool.NotTrackable {
+		return false
+	}
+	return info.Installed != nil && info.Latest != nil && util.SemverCompare(info.Installed, info.Latest) < 0
+}
+
+func toolVersionDisplayLine(tool *core.ToolManifest, info util.VersionInfo) string {
+	switch {
+	case tool.InstructionOnly:
+		return ""
+	case tool.NotTrackable && info.Installed != nil:
+		return util.C.Green(util.Sym.Check) + " " + util.C.Gray(padEnd(tool.ID, 14)+"v"+*info.Installed)
+	case tool.NotTrackable && info.Present:
+		return util.C.Green(util.Sym.Check) + " " + util.C.Gray(padEnd(tool.ID, 14)+"installed")
+	case tool.NotTrackable:
+		return util.C.Gray(util.Sym.Bullet + " " + padEnd(tool.ID, 14) + "not installed")
+	case toolVersionOutdated(tool, info):
+		return util.C.Yellow("↑") + " " + util.C.Gray(padEnd(tool.ID, 14)+padEnd("v"+*info.Installed, 10)+"→ ") + util.C.Green("v"+*info.Latest)
+	case info.Installed != nil:
+		row := padEnd(tool.ID, 14) + padEnd("v"+*info.Installed, 10)
+		if info.Latest != nil {
+			row += "→ v" + *info.Latest
+		}
+		return util.C.Green(util.Sym.Check) + " " + util.C.Gray(row)
+	default:
+		return util.C.Gray("• " + padEnd(tool.ID, 14) + "not installed")
+	}
+}
+
 // listToolVersions prints one row per tool.
-func listToolVersions(tools []*core.ToolManifest, v map[string]util.VersionInfo) {
+func listToolVersions(tools []*core.ToolManifest, v map[string]util.VersionInfo, tree bool) {
 	for _, tool := range tools {
 		if tool.InstructionOnly {
 			continue
 		}
-		info := v[tool.ID]
-		switch {
-		case tool.NotTrackable && info.Installed != nil:
-			util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Gray(padEnd(tool.ID, 14)+"v"+*info.Installed))
-		case tool.NotTrackable && info.Present:
-			util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Gray(padEnd(tool.ID, 14)+"installed"))
-		case tool.NotTrackable:
-			util.L.Raw("  " + util.C.Gray(util.Sym.Bullet+" "+padEnd(tool.ID, 14)+"not installed"))
-		case info.Installed != nil && info.Latest != nil && util.SemverCompare(info.Installed, info.Latest) < 0:
-			util.L.Raw("  " + util.C.Yellow("↑") + " " + util.C.Gray(padEnd(tool.ID, 14)+padEnd("v"+*info.Installed, 10)+"→ ") + util.C.Green("v"+*info.Latest))
-		case info.Installed != nil:
-			row := padEnd(tool.ID, 14) + padEnd("v"+*info.Installed, 10)
-			if info.Latest != nil {
-				row += "→ v" + *info.Latest
-			}
-			util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Gray(row))
-		default:
-			util.L.Raw("  " + util.C.Gray("• "+padEnd(tool.ID, 14)+"not installed"))
+		line := toolVersionDisplayLine(tool, v[tool.ID])
+		if line == "" {
+			continue
+		}
+		if tree {
+			util.TreeLeaf(line)
+		} else {
+			util.L.Raw("  " + line)
 		}
 	}
 }

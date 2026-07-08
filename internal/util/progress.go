@@ -18,24 +18,65 @@ func spinnerFrames() []string {
 }
 
 type Progress struct {
-	title   string
-	current string
-	phase   string
-	frac    float64
-	start   time.Time
-	frame   int
-	active  bool
-	mu      sync.Mutex
-	stop    chan struct{}
-	tty     bool
-	out     *os.File
-	treeStyle bool
-	rows      int
+	title      string
+	current    string
+	phase      string
+	frac       float64
+	start      time.Time
+	frame      int
+	active     bool
+	mu         sync.Mutex
+	stop       chan struct{}
+	tty        bool
+	out        *os.File
+	treeStyle  bool
+	treeRoot   bool
+	rows       int
 	lastNonTTY string
 }
 
 func NewProgress(title string) *Progress {
 	return &Progress{title: title, tty: stdoutIsTTY() && vtReady, out: os.Stdout}
+}
+
+// TreeStem is the vertical continuation prefix for nested installer rows.
+func TreeStem() string { return C.Dim(pick("│   ", "|   ")) }
+
+func treeCornerGlyph(root bool) string {
+	if root {
+		return pick("┌─ ", "+- ")
+	}
+	return pick("├─ ", "+- ")
+}
+
+// TreeTop opens the first branch (down-only connector).
+func TreeTop(title string) {
+	fmt.Println(C.Dim(treeCornerGlyph(true)) + C.Bold(title))
+}
+
+// TreeCorner opens a mid-tree branch under an active trunk.
+func TreeCorner(title string) {
+	fmt.Println(C.Dim(treeCornerGlyph(false)) + C.Bold(title))
+}
+
+// TreeCornerStyled opens a mid-tree branch; title already styled.
+func TreeCornerStyled(title string) {
+	fmt.Println(C.Dim(treeCornerGlyph(false)) + title)
+}
+
+// TreeLeaf prints one row under TreeStem().
+func TreeLeaf(line string) {
+	fmt.Println(TreeStem() + line)
+}
+
+// TreeClose ends the current trunk segment (connector only; trunk continues below).
+func TreeClose() {
+	fmt.Println(C.Dim(pick("│", "|")))
+}
+
+// TreeFooter closes the install tree with a rule line as the final branch.
+func TreeFooter(ruleWidth int) {
+	fmt.Println(C.Dim(pick("└", "+")) + C.Gray(Rule(ruleWidth)))
 }
 
 func NewSectionProgress(section string) *Progress {
@@ -47,13 +88,22 @@ func NewSectionProgress(section string) *Progress {
 	}
 }
 
+// NewRootSectionProgress is the first tree section (┌─ heading).
+func NewRootSectionProgress(section string) *Progress {
+	p := NewSectionProgress(section)
+	p.treeRoot = true
+	return p
+}
+
 func (p *Progress) Start(total int) {
 	if p.title != "" {
 		if p.treeStyle {
 			if p.tty {
 				fmt.Fprintf(p.out, "%s %s\n", C.Magenta(C.Bold(pick("●", "*"))), C.Magenta(C.Bold(p.title)))
+			} else if p.treeRoot {
+				TreeTop(p.title)
 			} else {
-				fmt.Fprintf(p.out, "%s%s\n", C.Dim(pick("┌─ ", "+- ")), C.Bold(p.title))
+				TreeCorner(p.title)
 			}
 		} else {
 			fmt.Fprintln(p.out, "\n  "+C.Bold(C.Cyan(p.title)))
@@ -211,10 +261,9 @@ func (p *Progress) Done(summary string) {
 	p.mu.Unlock()
 	if p.treeStyle {
 		if p.tty && title != "" {
-			corner := pick("┌─ ", "+- ")
-			fmt.Fprintf(p.out, "\x1b[%dA\r\x1b[2K%s%s\x1b[%dB\r", rows+1, C.Dim(corner), C.Bold(title), rows+1)
+			fmt.Fprintf(p.out, "\x1b[%dA\r\x1b[2K%s%s\x1b[%dB\r", rows+1, C.Dim(treeCornerGlyph(p.treeRoot)), C.Bold(title), rows+1)
 		}
-		fmt.Fprintln(p.out, C.Dim(pick("│", "|")))
+		TreeClose()
 		return
 	}
 	if summary != "" {

@@ -75,7 +75,7 @@ func TestDefaultRunChecksAndUpdatesToklessInTestMode(t *testing.T) {
 		defer func() { os.Args = oldArgs }()
 		return run()
 	})
-	for _, want := range []string{"Tools", "RTK", "Agents", "Equipped Claude Code", "Tokless", "tokless v0.0.0 → v0.1.0 updated"} {
+	for _, want := range []string{"Tools", "RTK", "Agents", "Claude Code", "rtk", "Tokless", "tokless v0.0.0 → v0.1.0 updated"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}

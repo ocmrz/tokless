@@ -63,7 +63,7 @@ func RunInit(opts InitOptions) int {
 		nodeOK, gitOK = util.EnsureDeps(needNode, needGit, minNode)
 	}
 
-	toolBar := util.NewSectionProgress("Tools")
+	toolBar := util.NewRootSectionProgress("Tools")
 	toolBar.Start(len(tools))
 	installLogs := map[string]string{}
 	for _, tool := range tools {
@@ -227,27 +227,20 @@ func RunInit(opts InitOptions) int {
 	util.SetQuiet(false)
 	toolsPkg.EnsureInstructionSeparators(wireIDs)
 
-	util.L.Raw("")
 	var fullyOK []string
 	for _, id := range wireIDs {
 		if failures[id] == nil {
 			fullyOK = append(fullyOK, id)
 		}
 	}
-	if len(fullyOK) > 0 {
-		labels := make([]string, len(fullyOK))
-		for i, id := range fullyOK {
-			labels[i] = core.GetAgent(id).Label
-		}
-		util.L.Raw("  " + util.C.Green(util.Sym.Check) + " Equipped " + util.C.Bold(joinComma(labels)) + ".")
-	}
+	v := util.GatherVersions()
+	printEquippedAgentTree(fullyOK, tools, v)
 	for id, failed := range failures {
-		util.L.Raw("  " + util.C.Yellow(util.Sym.Warn) + " " + core.GetAgent(id).Label + ": " +
+		util.TreeLeaf(util.C.Yellow(util.Sym.Warn) + " " + core.GetAgent(id).Label + ": " +
 			joinComma(failed) + " not wired. Run " + util.C.Cyan("tokless doctor") + " for details.")
 		printFailureDetail(map[string]string{core.GetAgent(id).Label: wireLogs[id]})
 	}
-	notifyOutdated(opts)
-	printRepoFooter()
+	printRepoFooter(true)
 	util.L.Raw("")
 	if len(failures) > 0 {
 		return 1
@@ -255,16 +248,42 @@ func RunInit(opts InitOptions) int {
 	return 0
 }
 
-// notifyOutdated prints each tool's installed → latest version.
-func notifyOutdated(opts InitOptions) {
-	if opts.DryRun || os.Getenv("TOKLESS_TEST") == "1" {
+// printEquippedAgentTree: one shared tool version block.
+func printEquippedAgentTree(fullyOK []string, tools []*core.ToolManifest, v map[string]util.VersionInfo) {
+	if len(fullyOK) == 0 {
 		return
 	}
-	v := util.GatherVersions()
-	util.L.Raw("")
-	listToolVersions(core.ListTools(), v)
-	if n := util.CountOutdated(v); n > 0 {
-		util.L.Raw("")
-		util.L.Warn(plural(n) + " available — run " + util.C.Cyan("tokless update"))
+	outdated := false
+	var lines []string
+	for _, tool := range tools {
+		wired := false
+		for _, agentID := range fullyOK {
+			if _, ok := tool.WireFor[agentID]; ok {
+				wired = true
+				break
+			}
+		}
+		if !wired {
+			continue
+		}
+		line := toolVersionDisplayLine(tool, v[tool.ID])
+		if line == "" {
+			continue
+		}
+		if toolVersionOutdated(tool, v[tool.ID]) {
+			outdated = true
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return
+	}
+	if outdated {
+		util.TreeCornerStyled(util.C.Bold("Run ") + util.C.Cyan("tokless update"))
+	} else {
+		util.TreeCorner("All fully updated")
+	}
+	for _, line := range lines {
+		util.TreeLeaf(line)
 	}
 }

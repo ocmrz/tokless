@@ -123,8 +123,14 @@ func padEnd(s string, n int) string {
 	return s + strings.Repeat(" ", n-len(s))
 }
 
-func printRepoFooter() {
+func printRepoFooter(tree bool) {
 	if osEnvTest() {
+		return
+	}
+	if tree {
+		util.TreeFooter(52)
+		util.L.Raw("  " + util.C.Gray("If tokless helps, please star it here: ") + util.C.Cyan(repoURL))
+		util.L.Raw("  " + util.C.Gray("If you hit any issue or have ideas, please raise it here: ") + util.C.Cyan(issuesURL))
 		return
 	}
 	util.L.Raw("")
