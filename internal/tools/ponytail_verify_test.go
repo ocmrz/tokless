@@ -32,7 +32,7 @@ func lookupPonytail(t *testing.T) *core.ToolManifest {
 func TestPonytailWireDryRun(t *testing.T) {
 	setupHome(t)
 	tm := lookupPonytail(t)
-	for _, agent := range []string{"claude", "opencode", "codex", "antigravity"} {
+	for _, agent := range []string{"claude", "opencode", "codex", "antigravity", "copilot"} {
 		path := agentInstructionPath(t, agent)
 		_ = util.EnsureDir(filepath.Dir(path))
 		_ = util.WriteFile(path, "# Notes\n\nkeep me\n")
@@ -56,7 +56,7 @@ func TestPonytailWireDryRun(t *testing.T) {
 func TestPonytailUnwireRemovesSection(t *testing.T) {
 	setupHome(t)
 	tm := lookupPonytail(t)
-	for _, agent := range []string{"claude", "opencode", "codex", "antigravity"} {
+	for _, agent := range []string{"claude", "opencode", "codex", "antigravity", "copilot"} {
 		path := agentInstructionPath(t, agent)
 		_ = util.EnsureDir(filepath.Dir(path))
 		_ = util.WriteFile(path, "# Notes\n\nkeep me\n")

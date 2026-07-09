@@ -466,6 +466,32 @@ func ctxVerifyAntigravity() bool {
 	return agents.AntigravityMcpHas("context-mode") && !agents.HasAntigravityContextModeHook()
 }
 
+// --- Copilot (CLI + VS Code user MCP, shared instructions) ---
+
+func ctxWireCopilot(opts core.RunOpts) (bool, error) {
+	if opts.DryRun {
+		util.L.Sub("[dry-run] would add context-mode MCP to ~/.copilot/mcp-config.json and VS Code user mcp.json")
+		return true, nil
+	}
+	agents.ConfigureCopilotMcp("context-mode")
+	WriteOwner("copilot", "context-mode")
+	return ctxVerifyCopilot(), nil
+}
+
+func ctxUnwireCopilot(opts core.RunOpts) (bool, error) {
+	if opts.DryRun {
+		util.L.Sub("[dry-run] would remove context-mode MCP from Copilot CLI and VS Code")
+		return true, nil
+	}
+	agents.RemoveCopilotMcp("context-mode")
+	RemoveOwner("copilot", "context-mode")
+	return true, nil
+}
+
+func ctxVerifyCopilot() bool {
+	return agents.CopilotHasMcp("context-mode")
+}
+
 // --- verify ---
 
 func ctxVerifyClaude() bool {
@@ -580,18 +606,21 @@ var contextMode = &core.ToolManifest{
 		"opencode":    ctxWireOpenCode,
 		"codex":       ctxWireCodex,
 		"antigravity": ctxWireAntigravity,
+		"copilot":     ctxWireCopilot,
 	},
 	UnwireFor: map[string]core.AgentFn{
 		"claude":      ctxUnwireClaude,
 		"opencode":    ctxUnwireOpenCode,
 		"codex":       ctxUnwireCodex,
 		"antigravity": ctxUnwireAntigravity,
+		"copilot":     ctxUnwireCopilot,
 	},
 	VerifyFor: map[string]core.VerifyFn{
 		"claude":      func() *bool { return core.BoolPtr(ctxVerifyClaude()) },
 		"opencode":    func() *bool { return core.BoolPtr(ctxVerifyOpenCode()) },
 		"codex":       func() *bool { return core.BoolPtr(ctxVerifyCodex()) },
 		"antigravity": func() *bool { return core.BoolPtr(ctxVerifyAntigravity()) },
+		"copilot":     func() *bool { return core.BoolPtr(ctxVerifyCopilot()) },
 	},
 }
 

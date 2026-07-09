@@ -163,6 +163,8 @@ func rtkTestShim(agent string) {
 		dir := util.OpenCodePathsResolved().PluginsDir
 		_ = os.MkdirAll(dir, 0o755)
 		writeIfMissing(filepath.Join(dir, "rtk.ts"), "// rtk plugin shim (tokless test mode)\nexport const Plugin = async () => ({});\n")
+	case "copilot":
+		agents.InstallCopilotRtkHook()
 	case "antigravity":
 		dir := filepath.Join(util.Home(), ".gemini", "antigravity-cli")
 		_ = os.MkdirAll(dir, 0o755)
@@ -442,6 +444,28 @@ func rtkWireCodex() core.AgentFn {
 	}
 }
 
+func rtkWireCopilot() core.AgentFn {
+	return func(opts core.RunOpts) (bool, error) {
+		if opts.DryRun {
+			util.L.Sub("[dry-run] would install Copilot RTK hook (~/.copilot/hooks/rtk-rewrite.json) for CLI + VS Code")
+			return true, nil
+		}
+		if os.Getenv("TOKLESS_TEST") == "1" {
+			rtkTestShim("copilot")
+			return true, nil
+		}
+		// Prefer rtk's own global Copilot installer when available.
+		if rtkPath := util.ResolveRtkBin(); rtkPath != "" {
+			r := util.Run(rtkPath, []string{"init", "-g", "--copilot"}, util.RunOptions{Capture: true})
+			if r.Code == 0 && agents.HasCopilotRtkHook() {
+				return true, nil
+			}
+		}
+		agents.InstallCopilotRtkHook()
+		return agents.HasCopilotRtkHook(), nil
+	}
+}
+
 func rtkWire(agent string) core.AgentFn {
 	return func(opts core.RunOpts) (bool, error) {
 		args := []string{"init", "-g"}
@@ -496,6 +520,7 @@ var rtk = &core.ToolManifest{
 		"opencode":    rtkWire("opencode"),
 		"codex":       rtkWireCodex(),
 		"antigravity": rtkWireAntigravity(),
+		"copilot":     rtkWireCopilot(),
 	},
 	UnwireFor: map[string]core.AgentFn{
 		"claude": func(core.RunOpts) (bool, error) {
@@ -529,6 +554,16 @@ var rtk = &core.ToolManifest{
 			RemoveOwner("antigravity", "rtk")
 			return true, nil
 		},
+		"copilot": func(core.RunOpts) (bool, error) {
+			if os.Getenv("TOKLESS_TEST") != "1" {
+				if p := util.ResolveRtkBin(); p != "" {
+					util.Run(p, []string{"init", "--uninstall", "-g", "--copilot"}, util.RunOptions{})
+				}
+			}
+			agents.RemoveCopilotRtkHook()
+			RemoveOwner("copilot", "rtk")
+			return true, nil
+		},
 	},
 	VerifyFor: map[string]core.VerifyFn{
 		"claude": func() *bool {
@@ -542,6 +577,9 @@ var rtk = &core.ToolManifest{
 		},
 		"antigravity": func() *bool {
 			return core.BoolPtr(agents.HasAntigravityRtkHook())
+		},
+		"copilot": func() *bool {
+			return core.BoolPtr(agents.HasCopilotRtkHook())
 		},
 	},
 }

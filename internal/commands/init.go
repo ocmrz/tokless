@@ -123,7 +123,7 @@ func RunInit(opts InitOptions) int {
 		util.L.Raw("")
 		if len(requested) == 0 {
 			util.L.Raw("  " + util.C.Yellow(util.Sym.Warn) + " Non-interactive shell and no agents detected — nothing to wire.")
-			util.L.Raw("  " + util.C.Gray("Run tokless in a terminal to pick agents, or: ") + util.C.Cyan("tokless --agents claude,opencode,codex"))
+			util.L.Raw("  " + util.C.Gray("Run tokless in a terminal to pick agents, or: ") + util.C.Cyan("tokless --agents claude,opencode,codex,antigravity,copilot"))
 			util.L.Raw("")
 			return 0
 		}
@@ -132,7 +132,7 @@ func RunInit(opts InitOptions) int {
 			labels[i] = core.GetAgent(id).Label
 		}
 		util.L.Raw("  " + util.C.Gray("Non-interactive shell — auto-selecting installed agents: ") + util.C.Bold(joinComma(labels)))
-		util.L.Raw("  " + util.C.Gray("To choose explicitly: ") + util.C.Cyan("tokless --agents <claude,opencode,codex>"))
+		util.L.Raw("  " + util.C.Gray("To choose explicitly: ") + util.C.Cyan("tokless --agents <claude,opencode,codex,antigravity,copilot>"))
 	default:
 		var optsList []util.MultiSelectOption
 		for _, a := range allAgents {

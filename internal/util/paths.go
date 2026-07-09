@@ -151,6 +151,43 @@ func AntigravityPathsResolved() AntigravityPaths {
 	}
 }
 
+// CopilotPaths holds GitHub Copilot CLI config locations.
+type CopilotPaths struct {
+	Dir, McpConfig, Instructions, HooksDir, SkillsDir string
+}
+
+func CopilotPathsResolved() CopilotPaths {
+	dir := filepath.Join(Home(), ".copilot")
+	if env := os.Getenv("COPILOT_HOME"); env != "" {
+		dir = env
+	}
+	return CopilotPaths{
+		Dir:          dir,
+		McpConfig:    filepath.Join(dir, "mcp-config.json"),
+		Instructions: filepath.Join(dir, "copilot-instructions.md"),
+		HooksDir:     filepath.Join(dir, "hooks"),
+		SkillsDir:    filepath.Join(Home(), ".agents", "skills"),
+	}
+}
+
+// VSCodeUserMcpPath returns the VS Code user-profile mcp.json path.
+func VSCodeUserMcpPath() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(Home(), "Library", "Application Support", "Code", "User", "mcp.json")
+	case "windows":
+		if app := os.Getenv("APPDATA"); app != "" {
+			return filepath.Join(app, "Code", "User", "mcp.json")
+		}
+		return filepath.Join(Home(), "AppData", "Roaming", "Code", "User", "mcp.json")
+	default:
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+			return filepath.Join(xdg, "Code", "User", "mcp.json")
+		}
+		return filepath.Join(Home(), ".config", "Code", "User", "mcp.json")
+	}
+}
+
 // CopyDirMerge recursively copies src into dst, overwriting files.
 func CopyDirMerge(src, dst string) error {
 	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {

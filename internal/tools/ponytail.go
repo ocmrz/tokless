@@ -206,6 +206,15 @@ func antigravityPonytailInstalled() bool {
 		util.Exists(filepath.Join(util.Home(), ".gemini", "antigravity", "skills", "ponytail"))
 }
 
+func copilotPonytailInstalled() bool {
+	if HasOwner("copilot", "ponytail") {
+		return true
+	}
+	p := util.CopilotPathsResolved()
+	return util.Exists(filepath.Join(p.SkillsDir, "ponytail")) ||
+		util.Exists(filepath.Join(p.Dir, "skills", "ponytail"))
+}
+
 func claudePluginListHasPonytail() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -394,6 +403,41 @@ func ponytailWireAntigravity(opts core.RunOpts) (bool, error) {
 	return antigravityPonytailInstalled(), nil
 }
 
+// ponytailWireCopilot writes the instruction baseline and prefers shared ~/.agents/skills.
+// Plugin install is interactive in Copilot CLI (/plugin marketplace add …).
+func ponytailWireCopilot(opts core.RunOpts) (bool, error) {
+	if !opts.Upgrade && copilotPonytailInstalled() {
+		WriteOwner("copilot", "ponytail")
+		return true, nil
+	}
+	if opts.DryRun {
+		util.L.Sub("[dry-run] would write Copilot instructions baseline; optional: copilot plugin marketplace add " + ponytailRepo)
+		WriteOwner("copilot", "ponytail")
+		return true, nil
+	}
+	if !isTest() && util.Which("copilot") != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		_ = util.Run("copilot", []string{"plugin", "marketplace", "add", ponytailRepo}, util.RunOptions{Capture: true, Ctx: ctx})
+		cancel()
+		stampPonytailVersion()
+	}
+	WriteOwner("copilot", "ponytail")
+	return copilotPonytailInstalled(), nil
+}
+
+func ponytailUnwireCopilot(opts core.RunOpts) (bool, error) {
+	if opts.DryRun {
+		util.L.Sub("[dry-run] would remove Copilot ponytail instruction baseline")
+		RemoveOwner("copilot", "ponytail")
+		return true, nil
+	}
+	p := util.CopilotPathsResolved()
+	_ = os.RemoveAll(filepath.Join(p.SkillsDir, "ponytail"))
+	_ = os.RemoveAll(filepath.Join(p.Dir, "skills", "ponytail"))
+	RemoveOwner("copilot", "ponytail")
+	return true, nil
+}
+
 func ponytailUnwireAntigravity(opts core.RunOpts) (bool, error) {
 	if opts.DryRun {
 		util.L.Sub("[dry-run] would remove antigravity ponytail skills and GEMINI.md block")
@@ -434,12 +478,14 @@ var ponytail = &core.ToolManifest{
 		"opencode":    ponytailWireOpencode,
 		"codex":       ponytailWireCodex,
 		"antigravity": ponytailWireAntigravity,
+		"copilot":     ponytailWireCopilot,
 	},
 	UnwireFor: map[string]core.AgentFn{
 		"claude":      ponytailUnwireClaude,
 		"opencode":    ponytailUnwireOpencode,
 		"codex":       ponytailUnwireCodex,
 		"antigravity": ponytailUnwireAntigravity,
+		"copilot":     ponytailUnwireCopilot,
 	},
 	VerifyFor: map[string]core.VerifyFn{
 		"claude": func() *bool {
@@ -456,5 +502,6 @@ var ponytail = &core.ToolManifest{
 		},
 		"codex":       func() *bool { return core.BoolPtr(codexPonytailInstalled()) },
 		"antigravity": func() *bool { return core.BoolPtr(antigravityPonytailInstalled()) },
+		"copilot":     func() *bool { return core.BoolPtr(copilotPonytailInstalled()) },
 	},
 }

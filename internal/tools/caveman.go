@@ -282,6 +282,16 @@ func antigravityCavemanInstalled() bool {
 		util.Exists(filepath.Join(util.Home(), ".gemini", "antigravity", "skills", "caveman"))
 }
 
+// copilotCavemanInstalled checks shared personal skills + Copilot skills dirs.
+func copilotCavemanInstalled() bool {
+	if HasOwner("copilot", "caveman") {
+		return true
+	}
+	p := util.CopilotPathsResolved()
+	return util.Exists(filepath.Join(p.SkillsDir, "caveman")) ||
+		util.Exists(filepath.Join(p.Dir, "skills", "caveman"))
+}
+
 func geminiCavemanMd() string { return filepath.Join(util.Home(), ".gemini", "GEMINI.md") }
 
 func writeCavemanGeminiMd()  { writeCavemanRuleset(geminiCavemanMd()) }
@@ -437,6 +447,21 @@ var caveman = &core.ToolManifest{
 			stampCavemanVersion()
 			return antigravityCavemanInstalled(), err
 		},
+		"copilot": func(opts core.RunOpts) (bool, error) {
+			if !opts.Upgrade && copilotCavemanInstalled() {
+				WriteOwner("copilot", "caveman")
+				return true, nil
+			}
+			bin, args := resolveSkillsBin(cavemanSkillsAddArgs("copilot"))
+			ran, err := cavemanExec(bin, args, opts, bin+" "+strings.Join(args, " "))
+			WriteOwner("copilot", "caveman")
+			if opts.DryRun || isTest() {
+				return ran, err
+			}
+			// Keep skills in ~/.agents/skills (shared by CLI + VS Code).
+			stampCavemanVersion()
+			return copilotCavemanInstalled(), err
+		},
 	},
 	VerifyFor: map[string]core.VerifyFn{
 		"claude": func() *bool {
@@ -448,6 +473,7 @@ var caveman = &core.ToolManifest{
 		"opencode":    func() *bool { return core.BoolPtr(opencodePluginInstalled() && opencodePluginFilesPresent()) },
 		"codex":       func() *bool { return core.BoolPtr(codexCavemanInstalled()) },
 		"antigravity": func() *bool { return core.BoolPtr(antigravityCavemanInstalled()) },
+		"copilot":     func() *bool { return core.BoolPtr(copilotCavemanInstalled()) },
 	},
 
 	UnwireFor: map[string]core.AgentFn{
@@ -498,6 +524,17 @@ var caveman = &core.ToolManifest{
 			RemoveOwner("antigravity", "caveman")
 			if !opts.DryRun && !isTest() {
 				removeCavemanSkillCopies(util.AntigravityPathsResolved().SkillsDir)
+			}
+			return ran, err
+		},
+		"copilot": func(opts core.RunOpts) (bool, error) {
+			bin, args := resolveSkillsBin(cavemanSkillsRemoveArgs("copilot"))
+			ran, err := cavemanExec(bin, args, opts, bin+" "+strings.Join(args, " "))
+			RemoveOwner("copilot", "caveman")
+			if !opts.DryRun && !isTest() {
+				p := util.CopilotPathsResolved()
+				removeCavemanSkillCopies(p.SkillsDir)
+				removeCavemanSkillCopies(filepath.Join(p.Dir, "skills"))
 			}
 			return ran, err
 		},

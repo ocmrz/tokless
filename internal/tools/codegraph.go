@@ -85,6 +85,8 @@ func codegraphConfigureMcp(agent string) bool {
 		agents.ConfigureCodexMcp("codegraph")
 	case "antigravity":
 		agents.ConfigureAntigravityMcp("codegraph")
+	case "copilot":
+		agents.ConfigureCopilotMcp("codegraph")
 	}
 	return true
 }
@@ -132,6 +134,8 @@ func codegraphVerify(agent string) bool {
 	case "antigravity":
 		agents.CleanupDeadIdeHooks()
 		return agents.AntigravityMcpHas("codegraph") && agents.HasAntigravityCodegraphIndexHook()
+	case "copilot":
+		return agents.CopilotHasMcp("codegraph")
 	}
 	return false
 }
@@ -230,6 +234,7 @@ var codegraph = &core.ToolManifest{
 		"opencode":    codegraphWire("opencode"),
 		"codex":       codegraphWire("codex"),
 		"antigravity": codegraphWire("antigravity"),
+		"copilot":     codegraphWire("copilot"),
 	},
 	UnwireFor: map[string]core.AgentFn{
 		"claude": func(core.RunOpts) (bool, error) {
@@ -266,11 +271,17 @@ var codegraph = &core.ToolManifest{
 			RemoveOwner("antigravity", "codegraph")
 			return true, nil
 		},
+		"copilot": func(core.RunOpts) (bool, error) {
+			agents.RemoveCopilotMcp("codegraph")
+			RemoveOwner("copilot", "codegraph")
+			return true, nil
+		},
 	},
 	VerifyFor: map[string]core.VerifyFn{
 		"claude":      func() *bool { return core.BoolPtr(codegraphVerify("claude")) },
 		"opencode":    func() *bool { return core.BoolPtr(codegraphVerify("opencode")) },
 		"codex":       func() *bool { return core.BoolPtr(codegraphVerify("codex")) },
 		"antigravity": func() *bool { return core.BoolPtr(codegraphVerify("antigravity")) },
+		"copilot":     func() *bool { return core.BoolPtr(codegraphVerify("copilot")) },
 	},
 }

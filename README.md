@@ -86,8 +86,8 @@ irm https://raw.githubusercontent.com/HoangP8/tokless/main/scripts/install.ps1 |
       </td>
       <td align="center" width="140">
         <img src="assets/agents/copilot.jpg" width="56" alt="GitHub Copilot" /><br/>
-        <span style="color:#8b949e"><b>GitHub Copilot</b></span><br/>
-        <sub><b style="color:#d29922">In progress</b></sub>
+        <b>GitHub Copilot</b><br/>
+        <sub><b style="color:#3fb950">✓ Done</b></sub>
       </td>
     </tr>
   </table>
@@ -97,7 +97,7 @@ Pick one, some, or all:
 ```bash
 tokless                              # interactive: pick agents
 tokless --agents claude,opencode     # wire just these
-tokless --agents claude,opencode,codex,antigravity  # all
+tokless --agents claude,opencode,codex,antigravity,copilot  # all
 ```
 
 ### Tools
@@ -115,13 +115,13 @@ tokless --agents claude,opencode,codex,antigravity  # all
 
 Each tool is wired into each agent through the agent's native config system — MCP servers, plugin registries, hooks, instruction files (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md`).
 
-| Tool | Claude | OpenCode | Codex | Antigravity |
-| :--- | :--- | :--- | :--- | :--- |
-| **rtk** | PreToolUse + Allow | Plugin | PreToolUse + PermissionRequest + Trust + Rules | PreToolUse + Allow |
-| **caveman** | Plugin + CLAUDE.md | Plugin + AGENTS.md | Skills + AGENTS.md | Skills + GEMINI.md |
-| **ponytail** | Plugin + CLAUDE.md | Plugin + AGENTS.md | Marketplace + AGENTS.md | Extension + GEMINI.md |
-| **codegraph** | MCP + Allow + CLAUDE.md | MCP + AGENTS.md | MCP + AGENTS.md | PostToolUse + PreInvocation + MCP + Allow + GEMINI.md |
-| **context-mode** | MCP + Allow + CLAUDE.md | Plugin + AGENTS.md | PreToolUse + MCP + AGENTS.md | MCP + Allow + GEMINI.md |
+| Tool | Claude | OpenCode | Codex | Antigravity | Copilot |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **rtk** | PreToolUse + Allow | Plugin | PreToolUse + PermissionRequest + Trust + Rules | PreToolUse + Allow | Hooks (`~/.copilot/hooks`) |
+| **caveman** | Plugin + CLAUDE.md | Plugin + AGENTS.md | Skills + AGENTS.md | Skills + GEMINI.md | Skills + copilot-instructions.md |
+| **ponytail** | Plugin + CLAUDE.md | Plugin + AGENTS.md | Marketplace + AGENTS.md | Extension + GEMINI.md | Plugin/skills + copilot-instructions.md |
+| **codegraph** | MCP + Allow + CLAUDE.md | MCP + AGENTS.md | MCP + AGENTS.md | PostToolUse + PreInvocation + MCP + Allow + GEMINI.md | MCP (CLI + VS Code) + copilot-instructions.md |
+| **context-mode** | MCP + Allow + CLAUDE.md | Plugin + AGENTS.md | PreToolUse + MCP + AGENTS.md | MCP + Allow + GEMINI.md | MCP (CLI + VS Code) + copilot-instructions.md |
 
 ## Usage
 
@@ -139,7 +139,7 @@ tokless --help       Show all commands and flags
 
 Flags:
 ```
---agents <list>   Subset: claude,opencode,codex,antigravity
+--agents <list>   Subset: claude,opencode,codex,antigravity,copilot
 --tools <list>    Subset: rtk,caveman,ponytail,codegraph,context-mode
 --dry-run         Preview, no writes
 --verbose         Every step

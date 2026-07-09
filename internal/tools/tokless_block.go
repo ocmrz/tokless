@@ -20,6 +20,8 @@ func instructionPath(agent string) string {
 		return util.CodexPathsResolved().Instructions
 	case "antigravity":
 		return util.AntigravityPathsResolved().Instructions
+	case "copilot":
+		return util.CopilotPathsResolved().Instructions
 	}
 	return ""
 }

@@ -49,10 +49,15 @@ func TestInitSandboxWiring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create .gemini/antigravity-ide: %v", err)
 	}
+	err = os.MkdirAll(filepath.Join(tempdir, ".copilot"), 0755)
+	if err != nil {
+		t.Fatalf("failed to create .copilot: %v", err)
+	}
 
 	util.SetHomeOverride(tempdir)
 	t.Setenv("HOME", tempdir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tempdir, ".config"))
+	t.Setenv("APPDATA", filepath.Join(tempdir, "AppData", "Roaming"))
 	defer util.SetHomeOverride("")
 
 	// Antigravity wiring is partly project-scoped — run from a sandbox project dir.
@@ -67,14 +72,14 @@ func TestInitSandboxWiring(t *testing.T) {
 	defer os.Chdir(oldWd)
 
 	code := commands.RunInit(commands.InitOptions{
-		Agents: []string{"claude", "opencode", "codex", "antigravity"},
+		Agents: []string{"claude", "opencode", "codex", "antigravity", "copilot"},
 	})
 	if code != 0 {
 		t.Errorf("RunInit returned non-zero code: %d", code)
 	}
 
 	indexCode := commands.RunIndex(commands.InitOptions{
-		Agents: []string{"claude", "opencode", "codex", "antigravity"},
+		Agents: []string{"claude", "opencode", "codex", "antigravity", "copilot"},
 	}, false)
 	if indexCode != 0 {
 		t.Errorf("RunIndex returned non-zero code: %d", indexCode)
@@ -258,6 +263,40 @@ func TestInitSandboxWiring(t *testing.T) {
 	agyIdeMcpPath := filepath.Join(tempdir, ".gemini", "antigravity-ide", "mcp_config.json")
 	if util.Exists(agyIdeMcpPath) {
 		t.Errorf("antigravity-ide mcp_config.json should not be created")
+	}
+
+	// 9. Copilot CLI MCP + instructions + RTK hook.
+	copilotMcpPath := filepath.Join(tempdir, ".copilot", "mcp-config.json")
+	copilotMcp, err := os.ReadFile(copilotMcpPath)
+	if err != nil {
+		t.Fatalf("failed to read copilot mcp-config.json: %v", err)
+	}
+	copilotMcpStr := string(copilotMcp)
+	for _, want := range []string{"codegraph", "context-mode", "mcpServers"} {
+		if !strings.Contains(copilotMcpStr, want) {
+			t.Errorf("copilot mcp-config.json missing %q, got: %s", want, copilotMcpStr)
+		}
+	}
+	copilotInstr, err := os.ReadFile(filepath.Join(tempdir, ".copilot", "copilot-instructions.md"))
+	if err != nil {
+		t.Fatalf("failed to read copilot-instructions.md: %v", err)
+	}
+	if !strings.Contains(string(copilotInstr), "## Context Tools (context-mode)") {
+		t.Errorf("copilot-instructions.md missing context-mode section, got: %s", string(copilotInstr))
+	}
+	if !util.Exists(filepath.Join(tempdir, ".copilot", "hooks", "rtk-rewrite.json")) {
+		t.Errorf("copilot RTK hook not installed")
+	}
+	vsMcpPath := util.VSCodeUserMcpPath()
+	vsMcp, err := os.ReadFile(vsMcpPath)
+	if err != nil {
+		t.Fatalf("failed to read VS Code mcp.json at %s: %v", vsMcpPath, err)
+	}
+	vsMcpStr := string(vsMcp)
+	for _, want := range []string{"codegraph", "context-mode", "servers"} {
+		if !strings.Contains(vsMcpStr, want) {
+			t.Errorf("VS Code mcp.json missing %q, got: %s", want, vsMcpStr)
+		}
 	}
 }
 

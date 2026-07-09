@@ -302,12 +302,18 @@ func cavemanVersionDirs() []string {
 
 	gemini := filepath.Join(home, ".gemini")
 
+	copilot := filepath.Join(home, ".copilot")
+	if d := os.Getenv("COPILOT_HOME"); d != "" {
+		copilot = d
+	}
+
 	return []string{
 		filepath.Join(OpenCodePathsResolved().Dir, "plugins", "caveman"),
 		filepath.Join(claude, "plugins", "marketplaces", "caveman"),
 		filepath.Join(claude, "plugins", "caveman"),
 		filepath.Join(codex, "skills", "caveman"),
 		filepath.Join(home, ".agents", "skills", "caveman"),
+		filepath.Join(copilot, "skills", "caveman"),
 		filepath.Join(gemini, "antigravity", "skills", "caveman"),
 		filepath.Join(gemini, "config", "skills", "caveman"),
 	}
@@ -540,6 +546,11 @@ func ponytailVersionDirs() []string {
 
 	gemini := filepath.Join(home, ".gemini")
 
+	copilot := filepath.Join(home, ".copilot")
+	if d := os.Getenv("COPILOT_HOME"); d != "" {
+		copilot = d
+	}
+
 	return []string{
 		filepath.Join(OpenCodePathsResolved().Dir, "plugins", "ponytail"),
 		filepath.Join(claude, "plugins", "marketplaces", "ponytail"),
@@ -548,6 +559,7 @@ func ponytailVersionDirs() []string {
 		filepath.Join(codex, "plugins", "marketplaces", "ponytail"),
 		filepath.Join(codex, "skills", "ponytail"),
 		filepath.Join(home, ".agents", "skills", "ponytail"),
+		filepath.Join(copilot, "skills", "ponytail"),
 		filepath.Join(gemini, "antigravity", "skills", "ponytail"),
 		filepath.Join(gemini, "config", "skills", "ponytail"),
 	}

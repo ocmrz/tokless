@@ -20,7 +20,7 @@ func init() {
 func TestUnifiedBody_WiresAllOwnersAcrossAllAgents(t *testing.T) {
 	setupHome(t)
 
-	agentsList := []string{"claude", "opencode", "codex", "antigravity"}
+	agentsList := []string{"claude", "opencode", "codex", "antigravity", "copilot"}
 	wireOrder := []string{"caveman", "codegraph", "context-mode", "ponytail"}
 	expectedOrder := []string{
 		util.SectionsByOwner["principles"],
@@ -91,7 +91,7 @@ func TestUnifiedBody_WiresAllOwnersAcrossAllAgents(t *testing.T) {
 func TestUnifiedBody_PerToolUnwire(t *testing.T) {
 	setupHome(t)
 
-	agentsList := []string{"claude", "opencode", "codex", "antigravity"}
+	agentsList := []string{"claude", "opencode", "codex", "antigravity", "copilot"}
 	wireOrder := []string{"caveman", "codegraph", "context-mode", "ponytail"}
 
 	for _, agent := range agentsList {
@@ -189,6 +189,8 @@ func agentInstructionPath(t *testing.T, agent string) string {
 		return filepath.Join(util.Home(), ".codex", "AGENTS.md")
 	case "antigravity":
 		return filepath.Join(util.Home(), ".gemini", "GEMINI.md")
+	case "copilot":
+		return filepath.Join(util.Home(), ".copilot", "copilot-instructions.md")
 	}
 	t.Fatalf("unknown agent %q", agent)
 	return ""

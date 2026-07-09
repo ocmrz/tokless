@@ -42,7 +42,7 @@ go test ./...                           # unit + sandbox integration + idempoten
 bash scripts/build-release.sh v0.2.0    # cross-compile all platform binaries
 ```
 
-The sandbox integration test wires all three agents under a temporary `HOME` and asserts idempotency.
+The sandbox integration test wires all supported agents under a temporary `HOME` and asserts idempotency.
 
 ## Releasing
 

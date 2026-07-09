@@ -785,4 +785,5 @@ func Register() {
 	core.RegisterAgent(opencode)
 	core.RegisterAgent(codex)
 	core.RegisterAgent(antigravity)
+	core.RegisterAgent(copilot)
 }

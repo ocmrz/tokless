@@ -322,3 +322,76 @@ func TestAgyKnownBinDirsPerOS(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigureCopilotMcpMergeAndRemove(t *testing.T) {
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	defer util.SetHomeOverride("")
+	t.Setenv("COPILOT_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+
+	p := util.CopilotPathsResolved()
+	_ = os.MkdirAll(p.Dir, 0o755)
+	_ = os.WriteFile(p.McpConfig, []byte(`{"mcpServers":{"user-server":{"type":"local","command":"keepme","args":[],"tools":["*"]}}}`), 0o644)
+
+	changed, _ := ConfigureCopilotMcp("codegraph")
+	if !changed {
+		t.Fatal("expected first configure to write")
+	}
+	if changed, _ := ConfigureCopilotMcp("codegraph"); changed {
+		t.Fatal("second configure must be idempotent")
+	}
+	ConfigureCopilotMcp("context-mode")
+
+	raw, _ := os.ReadFile(p.McpConfig)
+	for _, want := range []string{`"codegraph"`, `"context-mode"`, `"user-server"`, `"mcpServers"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("CLI mcp-config.json missing %s:\n%s", want, raw)
+		}
+	}
+	vsRaw, _ := os.ReadFile(util.VSCodeUserMcpPath())
+	for _, want := range []string{`"codegraph"`, `"context-mode"`, `"servers"`} {
+		if !strings.Contains(string(vsRaw), want) {
+			t.Fatalf("VS Code mcp.json missing %s:\n%s", want, vsRaw)
+		}
+	}
+	if !CopilotHasMcp("codegraph") || !CopilotHasMcp("context-mode") {
+		t.Fatal("CopilotHasMcp should see both tools")
+	}
+
+	RemoveCopilotMcp("codegraph")
+	if CopilotHasMcp("codegraph") {
+		t.Fatal("codegraph should be removed")
+	}
+	raw, _ = os.ReadFile(p.McpConfig)
+	if strings.Contains(string(raw), `"codegraph"`) || !strings.Contains(string(raw), `"user-server"`) || !strings.Contains(string(raw), `"context-mode"`) {
+		t.Fatalf("CLI remove incorrect:\n%s", raw)
+	}
+	vsRaw, _ = os.ReadFile(util.VSCodeUserMcpPath())
+	if strings.Contains(string(vsRaw), `"codegraph"`) || !strings.Contains(string(vsRaw), `"context-mode"`) {
+		t.Fatalf("VS Code remove incorrect:\n%s", vsRaw)
+	}
+}
+
+func TestInstallCopilotRtkHook(t *testing.T) {
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	defer util.SetHomeOverride("")
+	t.Setenv("COPILOT_HOME", "")
+
+	InstallCopilotRtkHook()
+	if !HasCopilotRtkHook() {
+		t.Fatal("expected RTK hook after install")
+	}
+	raw, _ := os.ReadFile(copilotRtkHookPath())
+	for _, want := range []string{"preToolUse", "PreToolUse", "rtk hook copilot", `"version": 1`} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("hook file missing %q:\n%s", want, raw)
+		}
+	}
+	RemoveCopilotRtkHook()
+	if HasCopilotRtkHook() {
+		t.Fatal("hook should be gone after remove")
+	}
+}
